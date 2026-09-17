@@ -1,0 +1,62 @@
+# standard — the wide catalog (shipped profile `sdk`), tightened for headless
+# workers (SPEC §4.2, §4.3, §7). Rows are addressed by id; a disabled row
+# is not loaded. Everything not named here is the stock `sdk` profile.
+- id: sandbox-policy
+  config:
+    mode: workspace-write          # stricter than the example's danger-full-access
+    workspaceRoot: !!js process.cwd()   # = the brief's scope
+- id: approval
+  config:
+    policy: never                  # headless: a blocked action fails; nobody
+                                   # answers session/request_permission
+- id: permission                   # the presets plugin must find a preset that
+  config:                          # matches the composed sandbox + approval pair
+    defaultPreset: headless
+    presets:
+      read-only:
+        sandbox: read-only
+        approval: ask
+      workspace-write:
+        sandbox: workspace-write
+        approval: ask
+      danger-full-access:
+        sandbox: danger-full-access
+        approval: never
+      headless:
+        sandbox: workspace-write
+        approval: never
+- id: bash-sandbox
+  config:
+    timeoutMs: 300000              # §4.3: 300 s per shell command (stock 60 s)
+- id: compaction-basic
+  disabled: true                   # compaction OFF: 32k is the line (§3, §4.3)
+- id: command-compact
+  disabled: true
+- id: web
+  disabled: true                   # network is for swarm lanes only (§7)
+- id: web-search-deepseek
+  disabled: true
+- id: web-fetch-http
+  disabled: true
+- id: tool-web
+  disabled: true
+- id: tool-ralph
+  disabled: true                   # self-looping executor (64 rounds), outside our caps
+- id: tool-workflow
+  disabled: true
+- id: workflow-worker-thread
+  disabled: true
+- id: session-telemetry-otel
+  disabled: true                   # no session telemetry from workers
+- id: session-persistence-jsonl
+  config:
+    root: !!js dshHomePath('sessions')
+    compression: none              # plain JSONL like sdk-minimal: the supervisor and
+                                   # the dream read it; the stock sdk row writes .zstd
+- insert:                          # change 12 (§5.1 meter, §14 item 1a): ADD the harness's
+    - id: hooks-claude-code        # Claude Code hooks bridge (no shipped profile loads it;
+      name: '@deepseek-ai/dsh-hooks-claude-code'   # an id-only patch cannot add a row,
+      config:                      # `insert` appends one): a PostToolUse command hook cats
+        configPath: !!js process.env.DSH_HOOKS_CONFIG   # the worker's meter file and its JSON
+                                   # is one context line after the tool result; per worker
+                                   # (engine.py); fail-open

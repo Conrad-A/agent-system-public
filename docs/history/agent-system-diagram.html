@@ -1,0 +1,525 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agent System — Architecture v3.1</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#07090e; --bg2:#0d1017;
+    --panel:#12161f; --panel2:#171c28;
+    --line:#242b3a; --line2:#333d54;
+    --text:#e9ecf2; --dim:#9aa2b6; --faint:#68708a;
+    --blue:#5eb0ff; --green:#5de08a; --amber:#ffc260; --purple:#b79bff; --gray:#8b93a7;
+    --blue-soft:rgba(94,176,255,.12); --green-soft:rgba(93,224,138,.12);
+    --amber-soft:rgba(255,194,96,.12); --purple-soft:rgba(183,155,255,.12);
+    --shadow:0 16px 44px rgba(0,0,0,.45);
+  }
+  @media (prefers-color-scheme: light){
+    :root{
+      --bg:#e3e7f0; --bg2:#eef1f8; --panel:#eef1f8; --panel2:#e7ebf5;
+      --line:#dbe0eb; --line2:#c3cbdd;
+      --text:#1b1f29; --dim:#59617a; --faint:#8b91a3;
+      --blue:#1f78d1; --green:#1f9e55; --amber:#c07f1d; --purple:#7452c8; --gray:#69718a;
+      --blue-soft:rgba(31,120,209,.09); --green-soft:rgba(31,158,85,.09);
+      --amber-soft:rgba(192,127,29,.10); --purple-soft:rgba(116,82,200,.09);
+      --shadow:0 12px 32px rgba(35,45,80,.12);
+    }
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  html{scroll-behavior:smooth;}
+  body{
+    background:
+      radial-gradient(900px 500px at 15% -5%, var(--blue-soft), transparent 60%),
+      radial-gradient(900px 500px at 85% 20%, var(--purple-soft), transparent 60%),
+      radial-gradient(700px 500px at 50% 105%, var(--green-soft), transparent 60%),
+      linear-gradient(var(--bg2), var(--bg));
+    background-attachment:fixed;
+    color:var(--text);
+    font-family:'Inter',system-ui,-apple-system,'Segoe UI',sans-serif;
+    padding:76px 28px 110px; display:flex; justify-content:center; min-height:100vh;
+    position:relative;
+  }
+  body::before{
+    content:""; position:fixed; inset:0; pointer-events:none;
+    background-image:
+      linear-gradient(var(--line) 1px, transparent 1px),
+      linear-gradient(90deg, var(--line) 1px, transparent 1px);
+    background-size:52px 52px; opacity:.14;
+    mask-image:radial-gradient(1000px 700px at 50% 30%, black, transparent 80%);
+    -webkit-mask-image:radial-gradient(1000px 700px at 50% 30%, black, transparent 80%);
+  }
+  .mono{font-family:'JetBrains Mono',ui-monospace,Menlo,Consolas,monospace;}
+  .wrap{max-width:940px; width:100%; position:relative;}
+
+  /* ---------- header ---------- */
+  header{text-align:center; margin-bottom:70px;}
+  header h1{
+    font-size:clamp(1.7rem, 4vw, 2.4rem); font-weight:800; letter-spacing:-.01em;
+    color:#1e517c;
+  }
+  header .sub{margin-top:14px; display:flex; gap:10px; justify-content:center; flex-wrap:wrap;}
+  .chip{
+    font-size:.72rem; letter-spacing:.08em; color:var(--dim);
+    border:1px solid var(--line2); background:var(--panel);
+    border-radius:999px; padding:6px 16px;
+  }
+
+  /* ---------- layers ---------- */
+  .layer{
+    position:relative;
+    background:linear-gradient(180deg, var(--panel2), var(--panel));
+    border:1px solid var(--line); border-radius:18px;
+    padding:32px 36px; box-shadow:var(--shadow);
+    transition:transform .25s ease, box-shadow .25s ease, border-color .25s ease;
+  }
+  .layer:hover{transform:translateY(-3px); border-color:var(--line2);}
+  .layer::before{ /* colored top glow bar */
+    content:""; position:absolute; top:-1px; left:24px; right:24px; height:3px;
+    border-radius:3px; background:var(--accent, var(--line2));
+    box-shadow:0 0 18px var(--accent-soft, transparent);
+  }
+  .access{--accent:var(--blue); --accent-soft:var(--blue-soft);}
+  .mainchat{--accent:#3fb6c9; --accent-soft:rgba(63,182,201,.14);}
+  .desktop{--accent:var(--green); --accent-soft:var(--green-soft);}
+  .verifier{--accent:var(--amber); --accent-soft:var(--amber-soft);}
+  .plumb{--accent:#e8836b; --accent-soft:rgba(232,131,107,.14);}
+  .spec{--accent:var(--line2);}
+
+  .head{display:flex; align-items:baseline; gap:11px; margin-bottom:18px;}
+  .dot{width:9px; height:9px; border-radius:50%; flex:none; transform:translateY(-1px);
+       background:var(--accent); box-shadow:0 0 12px var(--accent);
+       animation:pulse 2.6s ease-in-out infinite;}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.45}}
+  .head h2{font-size:.8rem; font-weight:600; letter-spacing:.16em; text-transform:uppercase; color:var(--accent);}
+  .tag{font-size:.72rem; color:var(--faint); font-weight:400; letter-spacing:.03em;}
+
+  /* access rows */
+  .chan{display:flex; gap:14px; align-items:baseline; padding:12px 4px; font-size:.88rem; border-bottom:1px solid var(--line);}
+  .chan:last-of-type{border-bottom:none;}
+  .chan .n{
+    font-size:.72rem; font-weight:700; color:var(--blue);
+    background:var(--blue-soft); border:1px solid var(--line);
+    border-radius:7px; padding:2px 9px; flex:none;
+  }
+  .chan .to{color:var(--faint);}
+  .note{font-size:.8rem; color:var(--dim); line-height:1.65; margin-top:14px;}
+
+  /* cards */
+  .cols{display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-top:16px;}
+  .card{
+    background:var(--panel); border:1px solid var(--line2); border-left:3px solid var(--accent, var(--line2));
+    border-radius:12px; padding:18px 20px; font-size:.84rem; line-height:1.75; color:var(--dim);
+    transition:transform .2s ease, box-shadow .2s ease;
+  }
+  .card:hover{transform:translateY(-2px); box-shadow:0 8px 22px rgba(0,0,0,.25);}
+  .card b{display:block; color:var(--text); font-size:.9rem; margin-bottom:8px; font-weight:600;}
+
+  /* ---------- connectors with flowing dots ---------- */
+  .flow{display:flex; flex-direction:column; align-items:center;}
+  .stem{
+    width:2px; height:40px; border-radius:2px; position:relative; overflow:hidden;
+    background:linear-gradient(var(--line2), var(--faint));
+  }
+  .stem::after{
+    content:""; position:absolute; left:0; width:100%; height:9px; border-radius:2px;
+    background:var(--flow, var(--blue)); box-shadow:0 0 8px var(--flow, var(--blue));
+    animation:drip 1.6s linear infinite;
+  }
+  @keyframes drip{from{top:-10px}to{top:100%}}
+  .tip{color:var(--faint); font-size:.85rem; line-height:.7; margin-top:-1px;}
+  .lbl{
+    font-size:.72rem; font-weight:500; letter-spacing:.08em; color:var(--dim);
+    background:var(--panel); border:1px solid var(--line); border-radius:999px;
+    padding:5px 14px; margin:12px 0;
+  }
+
+  /* fork */
+  .fork{display:grid; grid-template-columns:5fr 7fr; gap:28px; align-items:start; margin-top:6px;}
+  .branch{display:flex; flex-direction:column; align-items:center;}
+  .branch.left .stem::after{--flow:var(--green);}
+  .branch.right .stem::after{--flow:var(--amber);}
+  .pill{
+    border:1px solid; border-radius:999px; padding:12px 34px;
+    font-size:.9rem; font-weight:600; letter-spacing:.03em; margin-top:14px;
+  }
+  .pill.ok{color:var(--green); border-color:var(--green); background:var(--green-soft); box-shadow:0 0 24px var(--green-soft);}
+  .pill.ver{color:var(--amber); border-color:var(--amber); background:var(--amber-soft); box-shadow:0 0 24px var(--amber-soft);}
+  .verifier{width:100%;}
+
+  /* plumbing */
+  .plumb{text-align:center; margin-top:60px;}
+  .plumb .head{justify-content:center;}
+  .apis{font-size:.94rem; display:flex; justify-content:center; gap:14px; align-items:baseline; flex-wrap:wrap;}
+  .apis b{font-weight:600;}
+  .apis .sep{color:var(--faint);}
+
+  /* builds */
+  .builds{display:grid; grid-template-columns:1fr 1fr; gap:24px;}
+  .build{
+    position:relative;
+    background:linear-gradient(180deg, var(--panel2), var(--panel));
+    border:1px solid var(--line); border-radius:18px; padding:26px 28px;
+    font-size:.86rem; line-height:1.85; color:var(--dim); box-shadow:var(--shadow);
+    transition:transform .25s ease;
+  }
+  .build:hover{transform:translateY(-3px);}
+  .build::before{content:""; position:absolute; top:-1px; left:24px; right:24px; height:3px;
+    border-radius:3px; background:var(--purple); box-shadow:0 0 18px var(--purple-soft);}
+  .build b{color:var(--purple); font-size:.8rem; letter-spacing:.16em; font-weight:700;}
+  .promo{grid-column:1/-1; text-align:center; color:var(--faint); font-size:.77rem; margin-top:2px;}
+  .promo .mono{color:var(--dim);}
+
+  footer{margin-top:80px; text-align:center; color:var(--faint); font-size:.74rem; letter-spacing:.05em;}
+  footer .sep{margin:0 10px; opacity:.5;}
+
+  /* ---------- replication spec ---------- */
+  .spec{margin-top:64px;}
+  .spec summary{
+    cursor:pointer; font-size:.8rem; font-weight:600; letter-spacing:.14em;
+    text-transform:uppercase; color:var(--dim); list-style:none; user-select:none;
+    transition:color .2s ease;
+  }
+  .spec summary:hover{color:var(--text);}
+  .spec summary::before{content:"▸ "; color:var(--faint);}
+  .spec details[open] summary::before{content:"▾ ";}
+  .spec .body{margin-top:20px; font-size:.8rem; line-height:1.7; color:var(--dim);}
+  .spec h3{font-size:.72rem; letter-spacing:.1em; text-transform:uppercase; color:var(--text); margin:20px 0 6px;}
+  .spec table{width:100%; border-collapse:collapse; font-size:.76rem; margin:8px 0;}
+  .spec th,.spec td{border:1px solid var(--line); padding:7px 10px; text-align:left; vertical-align:top;}
+  .spec th{color:var(--text); font-weight:600; background:var(--panel2);}
+  .spec ul{padding-left:18px;}
+  .spec li{margin:4px 0;}
+  .spec .star{margin-top:22px; padding-top:16px; border-top:1px dashed var(--line); font-size:.76rem;}
+  .promptbox{
+    position:relative; background:var(--bg); border:1px solid var(--line2);
+    border-radius:12px; padding:18px 20px; margin:14px 0 6px;
+  }
+  .promptbox pre{
+    white-space:pre-wrap; font-family:'JetBrains Mono',ui-monospace,Menlo,monospace;
+    font-size:.74rem; line-height:1.65; color:var(--text);
+  }
+  .copybtn{
+    position:absolute; top:12px; right:12px; cursor:pointer;
+    font-size:.68rem; letter-spacing:.06em; color:var(--dim);
+    background:var(--panel); border:1px solid var(--line); border-radius:7px;
+    padding:5px 12px; font-family:inherit; transition:all .2s ease;
+  }
+  .copybtn:hover{color:var(--text); border-color:var(--blue); box-shadow:0 0 12px var(--blue-soft);}
+
+  /* maintenance notice */
+  .maint{
+    position:absolute; top:12px; right:20px; z-index:50; text-align:center;
+    font-size:.68rem; line-height:1.6; color:var(--faint); max-width:220px;
+  }
+  .maint b{display:block; color:var(--dim); font-size:.66rem;
+    letter-spacing:.14em; text-transform:uppercase; margin-bottom:3px;}
+
+  @media (prefers-reduced-motion: reduce){
+    *{animation:none !important; transition:none !important;}
+  }
+  @media (max-width:720px){
+    .fork,.cols,.builds{grid-template-columns:1fr;}
+    body{padding:48px 16px 80px;}
+    .layer{padding:26px 22px;}
+  }
+</style>
+</head>
+<body>
+<div class="maint">
+  <b>Maintenance</b>
+  Check for updates &amp; rotate keys regularly / when needed
+</div>
+
+<div class="wrap">
+
+  <header>
+    <h1>AGENT SYSTEM</h1>
+    <div class="sub" style="max-width:640px; margin-left:auto; margin-right:auto; line-height:1.7; font-size:.86rem; color:var(--dim);">
+      A personal, always-on AI system running on one encrypted desktop. Two open-model stacks —
+      DeepSeek V4-Flash-Vision-Exp in DeepSeek Harness and GLM-5.3-Flash in ZCode — handle chat and agentic
+      work at full reasoning depth. A switchable verifier layer samples five candidate answers and
+      has GLM judge them before anything reaches you — GLM holds the judge's seat for its low
+      hallucination rate, and because a model from a different lab catches errors the generator
+      can't see in its own work. Reachable from anywhere: Signal for commands
+      and recovery, a private WireGuard tailnet for the full interface and a 1:1 view of the screen.
+    </div>
+  </header>
+
+  <div class="layer access">
+    <div class="head"><span class="dot"></span><h2>Access Layers</h2><span class="tag">outside the system</span></div>
+    <div class="chan"><span class="n mono">1</span><div><b>Signal</b> <span class="mono" style="font-size:.75rem;color:var(--faint)">E2EE</span> <span class="to">→</span> watchdog (recovery) + dsh channel plugin (commands)<div class="note" style="margin-top:2px">works anywhere — even with the VPN down</div></div></div>
+    <div class="chan"><span class="n mono">2</span><div><b>Tailnet</b> <span class="mono" style="font-size:.75rem;color:var(--faint)">WireGuard</span> <span class="to">→</span> dsh web UI :3080 · SSH / tmux</div></div>
+    <div class="chan"><span class="n mono">3</span><div><b>Tailnet</b> <span class="mono" style="font-size:.75rem;color:var(--faint)">WireGuard</span> <span class="to">→</span> Sunshine ⇄ Moonlight — 1:1 screen, full control</div></div>
+    <div class="note">Desktop use is local — no VPN, no bridge, straight to everything.</div>
+  </div>
+
+  <div class="flow"><div class="stem" style="--flow:var(--blue)"></div><div class="tip">▼</div></div>
+
+  <div class="layer mainchat">
+    <div class="head"><span class="dot"></span><h2>Session Mechanics</h2><span class="tag">how every chat window works</span></div>
+    <div class="note" style="margin-top:0">The window you're chatting in below — whichever harness it lives in — is always the <b>main window</b>: it holds your direction and distilled results, nothing else. Every task you assign spawns its own fresh 32k worker session; tools run there, and only the result returns. Tool noise never touches your conversation.</div>
+    <div class="cols">
+      <div class="card"><b>Main window</b>direction · results · 32k rotation (state file + last ~8k carried verbatim) · dump-mode sessions exempt</div>
+      <div class="card"><b>Worker sessions</b>one per task · fresh 32k each · tools + execution · evidence-backed report back</div>
+    </div>
+  </div>
+
+  <div class="flow"><div class="stem" style="--flow:#3fb6c9"></div><div class="tip">▼</div></div>
+
+  <div class="layer desktop">
+    <div class="head"><span class="dot"></span><h2>Main Window</h2><span class="tag mono">LUKS2</span></div>
+    <div class="note" style="margin-top:0">Full use of both models — no restrictions. The normal working mode: agentic runs, goals, chat — in <b style="color:var(--text)">DeepSeek's Harness or ZCode</b>, governed by the session mechanics above.</div>
+    <div class="cols">
+      <div class="card"><b>DeepSeek Harness (dsh)</b>
+        always-on service<br>
+        <span class="mono">V4-Flash-Vision-Exp</span><br>
+        thinking: max, always</div>
+      <div class="card"><b>ZCode (Z.ai harness)</b>
+        Goal mode · batch<br>
+        <span class="mono">GLM-5.3-Flash</span><br>
+        reasoning: max, always</div>
+    </div>
+  </div>
+
+  <div class="fork">
+    <div class="branch left">
+      <div class="lbl mono">api output</div>
+      <div class="flow"><div class="stem"></div><div class="tip">▼</div></div>
+      <div class="pill ok">result</div>
+      <div style="display:flex; gap:12px; margin-top:58px; align-self:flex-start; margin-left:4px;">
+        <div style="border:1px dashed var(--gray); border-radius:10px; padding:0 12px; font-size:.68rem; line-height:1.5; color:var(--dim); text-align:center; width:148px; height:86px; box-sizing:border-box; display:flex; flex-direction:column; justify-content:center;">
+          <span><b style="color:var(--gray); font-size:.66rem; letter-spacing:.12em; text-transform:uppercase;">Math Stack</b><br>first domain module</span>
+        </div>
+        <div style="border:1px dashed var(--gray); border-radius:10px; padding:0 12px; font-size:.68rem; line-height:1.5; color:var(--dim); text-align:center; width:148px; height:86px; box-sizing:border-box; display:flex; flex-direction:column; justify-content:center;">
+          <span><b style="color:var(--gray); font-size:.66rem; letter-spacing:.12em; text-transform:uppercase;">Quant Stack</b><br>second domain module</span>
+        </div>
+      </div>
+      <div style="margin-top:12px; align-self:flex-start; margin-left:4px;">
+        <div style="border:1px dashed var(--gray); border-radius:10px; padding:0 12px; font-size:.68rem; line-height:1.5; color:var(--dim); text-align:center; width:148px; height:86px; box-sizing:border-box; display:flex; flex-direction:column; justify-content:center;">
+          <span><b style="color:var(--gray); font-size:.66rem; letter-spacing:.12em; text-transform:uppercase;">Security Work Stack</b><br>third domain module</span>
+        </div>
+      </div>
+    </div>
+    <div class="branch right">
+      <div class="lbl mono">!verify toggle ON</div>
+      <div class="flow"><div class="stem"></div><div class="tip">▼</div></div>
+      <div class="layer verifier">
+        <div class="head"><span class="dot"></span><h2>LLM-as-a-Verifier</h2><span class="tag">toggle — on until turned off</span></div>
+        <div class="note" style="margin-top:0"><span class="mono">!verify on</span> routes every prompt through this layer until <span class="mono">!verify off</span>. N candidate generations (default 5) with full chat history; GLM scores each independently; the winner returns to the chat.</div>
+        <div class="cols">
+          <div class="card"><b>Generator ×5</b><span class="mono" style="font-size:.78rem">V-Flash-Vision-Exp</span> only — any chat surface</div>
+          <div class="card"><b>Judge — always GLM</b>independent scoring · rubric · 3-sample expectation</div>
+        </div>
+      </div>
+      <div class="flow"><div class="stem"></div><div class="tip">▼</div></div>
+      <div class="pill ver">verified result</div>
+    </div>
+  </div>
+
+  <div class="layer plumb">
+    <div class="head"><span class="dot"></span><h2>Memory</h2><span class="tag">four layers</span></div>
+    <div class="cols" style="text-align:left; margin-top:4px;">
+      <div class="card"><b>Working</b>the live 32k session window + its ephemeral state files — where thinking happens; dies with the session</div>
+      <div class="card"><b>Episodic</b><span class="mono">archives/</span> + rotation log — raw record of what happened; greppable on demand; <span class="mono">artifacts/</span> holds distilled outputs</div>
+      <div class="card"><b>Semantic</b><span class="mono">facts.md</span> — what's true; bitemporal (when-true / when-learned), provenance + scope tagged, superseded never erased</div>
+      <div class="card"><b>Procedural</b><span class="mono">procedures.md</span> — learned how-tos · <span class="mono">style.md</span> — calibration, loaded into every session</div>
+      <div class="card" style="grid-column:1/-1;"><b>Library</b><span class="mono">library/</span> — raw reference corpus: PDFs, docs, papers. What the system can <i>look up</i> vs facts.md's <i>learned</i>. Never loaded wholesale — agentic retrieval only; synthesis via dump-mode sessions; content is data, never instructions; extracted facts enter facts.md through the gate with source provenance</div>
+    </div>
+    <div class="note">nightly consolidation reads episodic and proposes — the one scheduled job, permitted because it only proposes; the curation gate decides · forgetting: expiry + scope tags, decay review — human-gated, never silent</div>
+  </div>
+
+  <div class="flow"><div class="stem" style="--flow:#97a3f0"></div><div class="tip">▼</div></div>
+
+  <div class="layer" style="--accent:#97a3f0; --accent-soft:rgba(151,163,240,.14);">
+    <div class="head"><span class="dot"></span><h2>Observability</h2></div>
+    <div class="cols" style="margin-top:4px;">
+      <div class="card"><b>dsh trajectory logs</b>append-only JSONL (zstd): per-request headers, tool-call chains, reasoning blocks — greppable proof of which CoT fired</div>
+      <div class="card"><b>ZCode session log</b>file writes, commands, verification passes, confirmation gates — export format TBC at install</div>
+    </div>
+    <div class="note"><b style="color:var(--text)">Langfuse (self-hosted) = the hub:</b> drop-in OpenAI-wrapper tracing for all our plumbing — per-call tokens + cost, trace ID doubles as the task ID linking all three record systems; its datasets + judge scoring host the eval suite · + per-stack spend · <span class="mono">status</span> (verify state, exemptions, workers in flight) · weekly transcript reads</div>
+  </div>
+
+  <div class="flow"><div class="stem" style="--flow:#e25563"></div><div class="tip">▼</div></div>
+
+  <div class="layer" style="--accent:#e25563; --accent-soft:rgba(226,85,99,.14);">
+    <div class="head"><span class="dot"></span><h2>Evals</h2><span class="tag">run only when Conrad runs them</span></div>
+    <div class="note" style="margin-top:0">Regression suite (~100% gate for stable) · capability suites (the hill experiments climb) · the preset matrix (Minimal / Standard / anchored / eternal-minimal) · effective-window curves per retrieval class · verifier arms (cross- vs self-scoring) · seeded with MemTrapBench instances + real failures. Evals decide promotion — and the two open design questions.</div>
+  </div>
+
+  <div class="flow"><div class="stem" style="--flow:#b8823f"></div><div class="tip">▼</div></div>
+
+  <div class="layer" style="--accent:#b8823f; --accent-soft:rgba(184,130,63,.14);">
+    <div class="head"><span class="dot"></span><h2>Fable Module</h2><span class="tag">SPEC §2d · added 2026-09-04 · add-only, removable</span></div>
+    <div class="cols" style="margin-top:4px;">
+      <div class="card"><b>claude-fable-5-1</b>via Claude Code CLI (Max sub, flat rate); API key = fallback flag only; module absent → core runs complete</div>
+      <div class="card"><b>Six roles</b><span class="mono">!escalate</span> (10/day) · judge calibration (weekly, report-only) · verify arm (CROSS+FAM 6th candidate) · handoff writer · consolidation author · throne</div>
+    </div>
+    <div class="note"><b style="color:var(--text)">Inverted pyramid:</b> costliest judgment where tokens are fewest (throne, gate, audits); DeepSeek/GLM keep every heavy lift. All roles add-only with pre-Fable fallbacks; caps visible in <span class="mono">!status</span>; charter in <span class="mono">memory/prompts/throne.md</span></div>
+  </div>
+
+  <div class="flow"><div class="tip" style="margin:0">▲</div><div class="stem" style="--flow:var(--purple); transform:rotate(180deg)"></div></div>
+
+  <div class="builds">
+    <div class="build"><b>SYSTEM BUILD</b><br><span class="mono">git: main</span><br>the trusted framework you run — both stacks live here; changes land only via promotion</div>
+    <div class="build"><b>EXPERIMENTAL BUILD</b><br><span class="mono">git: exp/*</span><br>where new models, presets &amp; research get tried — allowed to break; currently empty</div>
+    <div class="promo">promotion <span class="mono">exp/* → main</span> · normally through eval gates</div>
+  </div>
+
+  <div class="layer spec">
+    <details>
+      <summary>Replication Spec — everything an AI needs to recreate this design 1:1</summary>
+      <div class="body">
+
+        <h3>0 · Prompt — paste this, with the spec below, into any AI system</h3>
+        <div class="promptbox">
+          <button class="copybtn" onclick="navigator.clipboard.writeText(document.getElementById('repl-prompt').innerText).then(()=>{this.textContent='copied ✓';setTimeout(()=>this.textContent='copy',1600)})">copy</button>
+          <pre id="repl-prompt">You are given the replication spec for a personal always-on agent system (two model stacks, toggleable verifier layer, three remote-access layers). Recreate it 1:1 on my machine.
+
+Rules:
+1. First ask me: my operating system, GPU, whether my ISP gives me a real public IP, my timezone, and confirm I have DeepSeek and Z.ai API keys plus a spare phone number for Signal.
+2. Preserve every numbered design section EXCEPT host mechanics (5) EXACTLY — models, settings, verifier protocol, session rotation/workers/memory, access layers, security invariants, git build rules. Do not substitute models, add tiers, add routing, or reintroduce any Claude/Anthropic dependency. The role split between the two stacks is deliberately undecided — leave it undecided.
+3. Re-derive host mechanics (section 5) for my platform using the spec's OS-substitution footnote (* at the end).
+4. Build in this order, one step at a time, waiting for my confirmation between steps: headscale server → join desktop + phone → harness A (dsh) → harness B (ZCode) → Signal watchdog → dsh-signal-channel plugin → verifier service (dsh plugin + ZCode plugin; Vision-Exp generates ×5, GLM always judges) → Sunshine/Moonlight.
+5. The spec is dated 2026-08-27. Verify current reality before using: harness versions, model availability (especially the unpinnable deepseek-v4-flash-vision-exp), and pricing. If anything has changed, FLAG it to me and ask — never silently adapt.
+6. All secrets go in a gitignored .env; never echo them, never place them in configs.
+7. If FIELD-NOTES.md accompanies this spec, treat it as ground truth for deployment behavior (known failure signatures, OS quirks, flight tests per layer) — its §0 kickoff prompt supersedes this one. This build was completed once (2026-09-01); the notes are that build's scar tissue.
+
+Spec follows:</pre>
+        </div>
+
+        <h3>1 · Models (exact)</h3>
+        <table>
+          <tr><th>Stack</th><th>Harness</th><th>Model string</th><th>Mandatory setting</th></tr>
+          <tr><td>A</td><td>DeepSeek Harness (<span class="mono">dsh</span>) — github.com/deepseek-ai/deepseek-harness, run <span class="mono">npx @deepseek-ai/dsh web</span> (UI :3080)</td><td class="mono">deepseek-v4-flash-vision-exp</td><td>thinking ON, effort max, every call</td></tr>
+          <tr><td>B</td><td>ZCode — Z.ai desktop ADE</td><td class="mono">glm-5.3-flash</td><td>max reasoning, every call</td></tr>
+        </table>
+        <ul>
+          <li>No tiers; no per-task model routing (role split deliberately TBD). No Anthropic/Claude dependency anywhere.</li>
+          <li><b>DeepSeek CoT presets (api-output path):</b> V4 conditions its chain-of-thought on the API-visible tool catalog — the Minimal catalog yields the "We/Let's" CoT (stronger reasoning, Project2 99/96); the Standard 25-tool catalog yields the "Let me" CoT (91/92). Policy: <b>default for agentic sessions = <span class="mono">anchored-standard</span></b> (github.com/xiaobright/dsh-anchored-standard — Minimal-aligned first request anchors We/Let's, full catalog unlocks after the first tool call; 98/99 with all tools); <b>pure reasoning/planning = plain Minimal</b>; <b>Standard = fallback + eval arm</b> (official composition, never stale). Anchored is pinned to dsh 0.1.0-rc.5 and carries a copy of the Standard composition — re-review on every dsh upgrade; catalog swap costs prompt cache once per session; promotion only after the first tool call. Co-candidate under evaluation: <span class="mono">eternal-minimal</span> (github.com/Greenhand-monster/dsh-deliberation-presets) — visible catalog stays the Minimal pair all session while Standard tools execute for real behind a <span class="mono">dshx</span> bash gateway; zero extra calls, zero cache breaks; instruction files hinted, not injected; gateway results capped 12k chars. Eval matrix decides between them (plain Minimal + Standard as baselines). <b>Deep-think segments:</b> mid-session hard reasoning delegates to a Minimal-preset subagent (fresh context, bash+editor only → guaranteed We/Let's CoT) returning a distilled conclusion — surface <span class="mono">!think &lt;q&gt;</span> or agent-initiated. Verifier layer wraps whichever preset a task runs under. <b>Preset-assignment matrix (a "thinking choice" by Fable, accepted 2026-08-27):</b> modes are switched by SPAWNING (the session is the unit of work — CoT never changes mid-context), and a brief's tool scope IS its cognition (the visible catalog triggers the CoT). Main window on DeepSeek = plain Minimal permanently (direction is planning-shaped; the throne holds no tool-heavy work) · planning/research/synthesis workers = Minimal · mechanical-execution workers (clear path, tight brief) = Standard — "Let me" stepwise's legitimate home, loop risk fenced by brief + step cap · plan-then-execute workers = anchored-standard · !think = Minimal subagent · verify candidates = TOOL-FREE requests (purest We/Let's condition) · dump-mode = Minimal, read-only. Eval arm: mode-mixed verify sampling (3 tool-free + 2 Standard-condition) for decorrelated candidates.</li>
+          <li>DeepSeek quirks to preserve: thinking mode silently ignores temperature/top_p; if a request includes <span class="mono">tools</span>, <span class="mono">reasoning_content</span> must be passed back on every subsequent call or the API 400s. Vision-Exp: no FIM, no open weights, unpinnable — fallback model <span class="mono">deepseek-v4-flash</span> (one-edit swap).</li>
+          <li>Keys <span class="mono">DEEPSEEK_API_KEY</span>, <span class="mono">GLM_API_KEY</span> live in gitignored <span class="mono">.env</span> only. Pin harness versions once working; upgrade only via exp branch.</li>
+        </ul>
+
+        <h3>2 · Verifier layer (toggle — on until turned off, never automatic)</h3>
+        <ul>
+          <li>Normal mode: you chat with either model directly — no verifier involved. <span class="mono">!verify on</span> (available from every access layer) switches to verified mode: each prompt + full chat history runs as N=5 candidate generations on <span class="mono">deepseek-v4-flash-vision-exp</span> — the only generator, from any chat surface — and <b>GLM is always the verifier</b> — it scores each candidate independently (fresh context, rubric, expectation over score tokens — on Z.ai approximated by a 3-sample average at temp 0.6, since the endpoint returns no logprobs and GLM cannot disable thinking; never side-by-side), and the winner is appended to the originating chat as the reply (framework: github.com/llm-as-a-verifier/llm-as-a-verifier). <span class="mono">!verify off</span> returns to normal. Sole exception: Z.ai API down → generating model self-scores. Toggle lives on both chat surfaces (dsh plugin + ZCode plugin — ZCode is MIT with a plugin system). State persists; always visible in status + web UI. Cost ≈×5 while on; shared prompt prefix keeps DeepSeek cache-hit input cheap.</li>
+          <li>High-stakes flag: cross-check — the other stack reviews the winner; disagreement is flagged to the human, never silently resolved.</li>
+        </ul>
+
+        <h3>2b · Sessions: rotation, workers, memory</h3>
+        <ul>
+          <li><b>Session rotation — 32k hard cap</b> (under the ~50k context-rot onset) on both chat surfaces; dsh's native tokenMeter is the trigger. Crossing the cap ARMS rotation; it FIRES at the next quiet boundary (deferrable mid-thread; eager ~26k when idle). Also caps verify-mode history cost by construction.</li>
+          <li><b>Rotation protocol:</b> the session maintains a continuous state file (decisions, open threads, parked ideas, focus) — updates REGENERATE it holistically, never append (append fragments memory; arXiv 2308.15022). Rotation finalizes the state file; the new session is seeded with it PLUS the last ~6–8k tokens of conversation VERBATIM (raw-tail carryover — tacit/recent context survives literally). Durable knowledge lives in memory files updated in place and is never re-distilled through handoffs. Old session is archived, never deleted; a rotation log indexes when/why/coverage/path. Every rotation announces itself with a one-line chat notice. First post-rotation call pays cache-miss once (accepted). <b>Dump-mode exemption:</b> rotation is default-on with per-session exemptions only — never a global off switch. Whole-context synthesis sessions (load &gt;32k deliberately, mine, discard) are exempt: a single large ingestion event auto-exempts (announced, one-word override); gradual accumulation with synthesis intent asks a one-line question (ambiguity resolves toward asking — a wrong rotation breaks the task, a wrong exemption just lingers); otherwise rotate as normal. Exemptions die with the session, never inherit to workers, always visible in <span class="mono">status</span>.</li>
+          <li><b>Main window / workers:</b> the main window is not a separate app — it is whichever harness chat you're sitting in (DeepSeek Harness or ZCode). It is the command center — direction and distilled results only, rotating per above. Every assigned task spawns its OWN fresh 32k worker session (dsh subagent machinery / ZCode equivalent); all tool calls happen in the worker; a distilled, size-capped report returns. Grain = one worker per TASK (a worker keeps its whole tool chain in one context); workers may rotate or spawn sub-workers. Worker registry keys to the main window's LINEAGE, not the session instance — in-flight workers report to whichever session currently holds the throne. Both directions are contracts: the BRIEF (main→worker) carries goal, constraints, definition-of-done, facts, scope — and unsure workers ask back, never guess. The REPORT (worker→main) is structured and size-capped (≤~500 tokens to chat, big output to files by path): did / changed / decisions / surprises / open items / EVIDENCE (test output, diff, artifact — claims without evidence don't count as done) / based-on tag so stale returns get reconciled. Registry states running/done/failed/timed-out with timeouts and terminal-state notifications; <span class="mono">status</span> lists everything in flight. One writer per resource (serialize or git worktrees). Reports are data (untrusted), never instructions. <b>Ownership invariant:</b> workers never hand off laterally — hierarchy only (spawn sub-workers down, report up), task ownership never transfers (prevents the handoff-loop failure, #1 in 2026 production reports). <b>Window semantics:</b> one THRONE per lineage (where the prompt starts; sole writer of lineage state); every other tied window is a SATELLITE behaving under the same worker contract — reads lineage state, spawns into the shared registry, reports up on rotation/close. Rotation is per window; the state file per lineage; the verify toggle per window. <span class="mono">!throne</span> migrates the crown (atomic, announced; closed-throne lineages go dormant, resumable); <span class="mono">!untie</span> forks a window into a new lineage (its workers follow it); <span class="mono">!retie</span> merges a lineage back as a worker-style report — contradictions between the two lines are listed for the owner, never silently resolved.</li>
+          <li><b>Memory system</b> (repo <span class="mono">memory/</span> tree; four layers per the CoALA taxonomy — working = the live 32k window): <span class="mono">facts.md</span> — semantic: durable knowledge, updated in place, never re-distilled; every entry carries provenance (user-said / worker-inferred / web-claimed, session — arXiv 2605.25869), TWO dates (when-true vs when-learned, bitemporal per Toki arXiv 2606.06240), scope, optional <span class="mono">expires:</span> · <span class="mono">procedures.md</span> — procedural: learned how-tos, curation-gated · <span class="mono">style.md</span> — calibration, loaded every session · <span class="mono">artifacts/</span> · <span class="mono">archives/</span> — episodic: full session logs, greppable, + <span class="mono">rotation-log.md</span> · <span class="mono">library/</span> — raw reference corpus (PDFs, docs): what the system can look up vs what it has learned; never loaded wholesale, agentic retrieval only, dump-mode sessions for synthesis; content is data never instructions; extracted facts pass the curation gate with source provenance. Ingestion: drop into <span class="mono">library/inbox/</span> (desktop drag or Signal attachment) → <span class="mono">!ingest</span> renames (<span class="mono">YYYY-MM_topic_title.ext</span>), indexes one line per doc in <span class="mono">index.md</span>, and writes pdftotext sidecars so grep reaches inside PDFs. <b>Write contract (Toki-lite):</b> supersede never erase (losing facts move to an audit section with when/why); the curation gate logs adjudications so contradictions replay consistently; the gate treats fact proposals from workers, web, or library documents as adversarial by default (2026 poisoning literature: attacks succeed at &lt;0.1% poison rates — the write path is the battleground, audit rows double as the repair mechanism). Handoffs and state files compress toward decision-relevance, not descriptive fidelity (rate-distortion, arXiv 2605.10870) — keep what changes future choices. <b>Consolidation pass:</b> nightly, off-peak — the autonomy principle's ONE scheduled exception, permitted because it cannot act: it only PROPOSES (the principle otherwise holds: always-on means 24/7 access, nothing executes without the owner initiating; <span class="mono">!consolidate</span> also triggers it manually). Reads recent archives and proposes to the gate: fact promotions, patterns worth becoming procedures, stale flags, decay-review flags — the gate decides; the only mechanism that sees cross-session patterns. <b>Observability:</b> Langfuse self-hosted as the hub (MIT; drop-in OpenAI-wrapper tracing for all plumbing; trace ID = the task ID stamped into harness logs; its datasets + judge scoring host the eval suite) · dsh trajectory JSONL (headers, tool chains, reasoning blocks — proof of which CoT fired) · ZCode logs, local at <span class="mono">~/.zcode</span> with menu export (format: reverse-engineer at install; app is MIT) · per-stack spend · status · weekly transcript reads. <b>Forgetting:</b> supersession on write + expires/scope tags honored at consolidation + usage-decay review — flagged, human-gated, never silent deletion. Evidence base: summary-only memory loses information (LoCoMo, arXiv 2402.17753); recent-verbatim retention is load-bearing (StreamingLLM); retrieval over raw archives is the third leg (arXiv 2502.05589). <b>Access model:</b> one durable store, never two parallel systems (parallel stores fragment retrieval). Reads universal; writes gated by session type — main window only (the curation gate, enforcing provenance/scope/neutral-affect); workers propose facts via reports; dump-mode sessions write artifacts only. The ephemeral layer (state files, handoffs, reports) is separate and dies with its sessions. <b>Memory-trap defenses</b> (MemTrapBench, arXiv 2608.20202 — even true, relevant memories degrade current-task reasoning; every tested framework scored &gt;10 pts below no-memory): an AdaptiveMem guard in every session's standing prompt (four risks — task boundary, cognitive bias, trauma, safety; identify the live task from the latest query alone, keep only clearly relevant context, prefer truth/safety &gt; current query &gt; minimum context; don't over-trigger); scope tags on memory entries ("valid for context C") alongside provenance; neutral-affect failure records ("X failed on Y because Z" — never emotional framing, which induces avoidance of currently-correct approaches).</li>
+        </ul>
+
+        <h3>3 · Access layers</h3>
+        <table>
+          <tr><th>#</th><th>Channel</th><th>Transport</th><th>Gives</th><th>Depends on</th></tr>
+          <tr><td>1</td><td>Signal</td><td>signal-cli (separate phone number, daemon/JSON-RPC), Signal E2EE</td><td>coarse commands + recovery</td><td>nothing else running</td></tr>
+          <tr><td>2</td><td>Tailnet</td><td>WireGuard, self-hosted Headscale (github.com/juanfont/headscale); clients = official Tailscale apps pointed at it</td><td>dsh web UI :3080, SSH/tmux</td><td>headscale reachable</td></tr>
+          <tr><td>3</td><td>Tailnet</td><td>Sunshine host + Moonlight client (github.com/LizardByte/Sunshine)</td><td>1:1 screen, full control</td><td>VPN + machine up</td></tr>
+        </table>
+        <ul>
+          <li>Layer 1 is two processes: (a) standalone watchdog service independent of dsh — hardcoded commands only: restart dsh / restart zcode / reboot / status / vpn up; (b) a dsh channel plugin to build (<span class="mono">dsh-signal-channel</span>, modeled on github.com/hi-wenw/dsh-telegram-channel). Watchdog first.</li>
+          <li>Headscale on the desktop needs HTTPS (iOS refuses plain-http control servers): router-forward TCP 80 (ACME) + TCP 443 + UDP 3478, Let's Encrypt via HTTP-01, embedded DERP on, listen on the LAN IP (not 0.0.0.0), /etc/hosts maps the domain to the LAN IP (hairpin workaround) — and a non-CGNAT public IP; otherwise host headscale on a cheap VPS.</li>
+          <li>Remote web access to the harness: harness binds loopback only (by design — RCE exposure); a Caddy relay on the tailnet IP terminates TLS with a real cert (acme.sh DNS-01 on the DuckDNS name, auto-renew), rewrites Host to localhost and strips Origin (the harness's configuration plane is loopback-same-origin; its trusted-host flag covers RPC only). The name is served tailnet-wide via headscale dns.extra_records. Native host dialogs (workspace picker) render on the host screen — resume existing sessions remotely; create workspaces at the desk or over Moonlight.</li>
+          <li>Sunshine ports (TCP 47984-47990, UDP 47998-48010) and dsh UI firewalled to the tailnet interface only. Signal is messaging only — nothing tunnels through it.</li>
+        </ul>
+
+        <h3>4 · Security invariants (non-negotiable)</h3>
+        <ul>
+          <li>Chat senders allowlisted to the owner's Signal number; everything else ignored + logged.</li>
+          <li>Chat carries a coarse command set only — no raw shell passthrough; message content is untrusted (prompt-injection surface).</li>
+          <li>Destructive actions need an explicit second confirmation. Secrets never transit chat.</li>
+          <li>Disk LUKS2; reboots wait at the passphrase (accepted, no TPM auto-unlock). Transit: WireGuard everywhere except Signal (own E2EE). Watchdog/bridge run unprivileged.</li>
+        </ul>
+
+        <h3>5 · Host & lifecycle</h3>
+        <ul>
+          <li>One desktop host (Linux, Wayland), sleep/suspend masked, 24/7. dsh as a user systemd service inside tmux session <span class="mono">agents</span>, linger enabled.</li>
+          <li>Sunshine on Wayland: KMS capture → <span class="mono">setcap cap_sys_admin+p</span> on the binary, input-group/uinput perms, hardware encoder (VAAPI/NVENC) verified.</li>
+        </ul>
+
+        <h3>5b · Workspace, permissions, commands, resources, backups</h3>
+        <ul>
+          <li><b>Workspace:</b> root = <span class="mono">~/Desktop</span>, agents access everything under it; nothing outside by default. <b>Permission modes per session, Claude-Code-style:</b> MANUAL (default — every write/command confirmed; ZCode's gates and dsh's approval stack map to it) / AUTO (acts freely within scope; destructive actions still confirmed). Mode shows in status; workers inherit from their brief.</li>
+          <li><b>Command registry (single source of truth):</b> <span class="mono">!verify on|off</span> · <span class="mono">!do on|off</span> (opposite-CoT mode) · <span class="mono">!think &lt;q&gt;</span> (Minimal subagent) · <span class="mono">!do &lt;task&gt;</span> (Standard subagent) · <span class="mono">!rotate</span> · <span class="mono">!consolidate</span> · <span class="mono">!throne</span> · <span class="mono">!untie</span> / <span class="mono">!retie &lt;lineage&gt;</span> · <span class="mono">!ingest</span> · <span class="mono">!status</span> (chat; watchdog keeps plain status) · rotation replies (defer / exemption confirm) · watchdog-only: <span class="mono">restart dsh|zcode, reboot, status, vpn up</span>.</li>
+          <li><b>Resource budget (verify on hardware):</b> Langfuse ~2.5–4 GB · dsh ~0.3–0.8 · ZCode ~0.5–1.5 · signal-cli ~0.2–0.4 · Sunshine ~0.1–0.3 · headscale ~0.1 → ≈4–7 GB + OS. 16 GB comfortable; on 8 GB defer or trim Langfuse.</li>
+          <li><b>Backups:</b> tier 1 local history = snapper snapshots (verify /home coverage). Tier 2 off-machine: DECLINED by the owner — accepted risk on record (a disk failure erases everything; a private git remote alone would cover the behavior-defining files if ever wanted). Also on record by choice: no data-egress policy (all content may flow to the two APIs), no degraded-mode playbook (a down provider simply isn't used until it returns).</li>
+          <li><b>Plumbing QA:</b> zero-dependency unit tests (built: <span class="mono">plumbing/tests/run_tests.py</span>, 18 tests) — the regression gate before promoting any change.</li>
+          <li><b>Runaway caps:</b> workers 25 steps · coding goals 64 · per-task spend alert ~$1, hard stop ~$5 (per task, not per candidate — verify ×5 included) · provider-side monthly caps ~$30/key. Cap hit = stop + report, never silent continuation. Provenance, honestly: starting numbers are practitioner heuristics + one preset default + judgment, NOT research-derived — the load-bearing mechanism is tuning: after two weeks, set each cap at ~2× the p95 of its task class from Langfuse data; revisit quarterly.</li>
+          <li><b>Maintenance duties (the top-right notice, expanded):</b> <span class="mono">signal-cli</span> monthly (Signal enforces client currency; a stale client kills the recovery channel) · after kernel updates verify NVIDIA akmod + Sunshine capture · Langfuse containers on release · dsh/ZCode only via exp branch · rotate API keys if suspected leaked · expire headscale preauth keys and Sunshine pairings quarterly · keep the Signal bridge number active (unused VoIP numbers get recycled).</li>
+        </ul>
+
+        <h3>6 · Two builds (git)</h3>
+        <ul>
+          <li><span class="mono">main</span> = stable build, everything pinnable pinned; changes normally land only by promotion from <span class="mono">exp/*</span> (experimental build) after evals (regression ~100%, capability improved). Rollback = git revert. <b>Boundary rule — repo = genome, runtime state = body:</b> anything defining behavior lives in the repo, branch-versioned (configs, prompts, presets, plugins, memory rules, eval task definitions synced into Langfuse, ZCode's exportable settings mirrored in); anything recording history (traces, archives, library) lives outside git with its own backup; nothing behavioral may exist only inside an app's internal storage.</li>
+          <li>On record: GLM/ZCode entered stable directly by owner decision 2026-08-27 (eval gate skipped); first eval run baselines both engines.</li>
+          <li>Evals to build: 20–50 tasks harvested from real failures, outcome-graded; pass^k gates stable; weekly transcript reads.</li>
+        </ul>
+
+        <h3>6b · Observability requirements</h3>
+        <ul>
+          <li>Langfuse self-hosted = the hub (six containers, Docker Compose; MIT). All plumbing uses the <span class="mono">langfuse.openai</span> drop-in wrapper. <b>Task-ID correlation (required):</b> the Langfuse trace ID is stamped into both stacks' logs — one grep reconstructs any task across generator, judge, and workers. <b>Usage-field logging (required):</b> every API response's usage fields (tokens, cache hits) recorded per task ID — per-task cost attribution. Harness ground truth: dsh trajectory JSONL; ZCode logs local at <span class="mono">~/.zcode</span> (format: confirm at install). Weekly transcript reads.</li>
+        </ul>
+
+        <h3>7 · Cost posture</h3>
+        <ul>
+          <li>Two cheap APIs only. DeepSeek off-peak = 50% off (peak: UTC Mon–Fri 01:00–04:00, 06:00–10:00); schedule batch accordingly. GLM promo pricing ends Sep 9, 2026 — re-evaluate then. Best-of-5 multiplies spend ×5 per verified task.</li>
+        </ul>
+
+        <h3>8 · Open decisions (deliberately undecided — preserve as open)</h3>
+        <ul>
+          <li>Role split between the stacks in normal mode (decided so far: GLM always judges; Vision-Exp is the sole verify-mode generator).</li>
+          <li>Agentic preset default, final call: anchored-standard (current) vs eternal-minimal — the eval matrix decides.</li>
+          <li>The eval task set — accumulates from real failures.</li>
+          <li>Tools &amp; presets: closed by the preset-assignment matrix plus the tool-surface policy — <b>zero MCP servers by default</b> (every catalog entry has a cognition price: the visible catalog shapes the CoT); capability gaps solved CLI-first through bash (full capability, zero catalog entries); MCP permitted only for a specific service's own/official server when it beats that service's CLI, entering via the exp branch; never general-purpose MCP packs. <b>Domain-onboarding pattern:</b> a new capability = a CAPABILITY PLUGIN (in-repo, one branch-testable unit: toolbox additions + skills + agent-definitions-as-files — named roles as on-disk recipes with tuned tool scope, zero idle cost, always spawned under the worker contract — + verifier-tier config + milestone plan) bridging to a WORKSPACE PROJECT (the domain's own repo: independent machinery, task-IDs into Langfuse, results up as worker reports, wins through the curation gate; the plugin pins the workspace's path + expected git rev — the genome always knows which domain-stack version it expects; separate repos for heavy domains, trivial ones may live inside the plugin). Matrix rows only for recurring session shapes. Planned first instance: the math module (Goedel-8B 4-bit prover locally, GLM/Vision-Exp replacing the frontier-LLM layer, `lake build` as the verifier tier). Planned second instance: the quant module (source: frontier quant stack v6/v7.6 + ops manual — finished spec, zero code). Its three wrinkles: verifier tier is statistical (Deflated Sharpe + CPCV + append-only trial registry — overfitting is the adversary; the registry is the domain's planted-false suite); the risk layer is deterministic plumbing outside any LLM's reach (nobody overrides the risk desk — agents do research only); live trading requires an autonomy amendment sanctioning protective automation (kill switches fire without the owner) plus manual-mode order confirms until stage-gates say otherwise — the $0 research tier touches none of this. Ops-manual [EDIT] fields are owner pre-commitments, set once while calm. Scenario toolkits (e.g. Lean for math): domain tools enter as installed CLIs — on PATH, bash-reachable, catalog-invisible, usable even by Minimal workers; competence lives as a skill/procedures entry; every installed CLI recorded in <span class="mono">configs/toolbox.md</span> (PATH contents are behavior-defining = genome); formal checkers like Lean are perfect verifiers for their domain — prefer them over LLM judging where they apply. Remaining open: only the dshx gateway design if eternal-minimal wins the preset eval — do not improvise it.</li>
+        </ul>
+
+        <div class="star">
+          * <b>Any operating system:</b> reference scripts target Debian/Ubuntu, but no component is OS-bound — headscale/Tailscale, Node+dsh, ZCode, signal-cli (JVM), Sunshine/Moonlight, git all run on Linux/macOS/Windows. Substitutions: systemd → launchd (macOS) / Task Scheduler or NSSM (Windows); LUKS2 → FileVault / BitLocker; Wayland capture steps → the target OS's native capture. A recreating AI must preserve sections 1–4 and 6–7 exactly and re-derive section 5 for the target platform.
+        </div>
+
+      </div>
+    </details>
+  </div>
+
+  <footer>
+    <span style="display:block; margin-bottom:10px;">DeepSeek and Z.ai APIs</span>
+    <a href="https://arxiv.org/abs/2607.05391" style="color:var(--dim); text-decoration:underline; text-underline-offset:3px;">LLM-as-a-Verifier: A General-Purpose Verification Framework (arXiv:2607.05391)</a>
+  </footer>
+
+  <div style="text-align:right; margin-top:28px; font-size:.58rem; line-height:1.7; color:var(--faint); letter-spacing:.03em;">
+    <span style="text-transform:uppercase; letter-spacing:.12em;">chain of thinking choices (Fable) — experimental</span><br>
+    <b>Main window</b> → Minimal: direction &amp; judgment are planning work; the throne never grinds tools<br>
+    <b>Planning / research / synthesis workers</b> → Minimal: deliberation is the task itself<br>
+    <b>Mechanical-execution workers</b> → Standard: stepwise suits grinding a known plan; brief + step cap fence the loop risk<br>
+    <b>Plan-then-execute workers</b> → anchored: deep start, tools unlock when first needed<br>
+    <b>Verify candidates</b> → tool-free: no catalog at all = the deepest We/Let's condition<br>
+    <b>Dump-mode</b> → Minimal, read-only: it reads everything, acts on nothing
+  </div>
+
+  <div style="text-align:right; margin-top:18px; margin-left:auto; max-width:400px; font-size:.58rem; line-height:1.7; color:var(--faint); letter-spacing:.03em;">
+    <span style="text-transform:uppercase; letter-spacing:.12em;">command registry</span><br>
+    <b class="mono">!verify on|off</b> — routes every prompt through the verifier layer until turned off<br>
+    <b class="mono">!think &lt;q&gt;</b> — fires a hard question into a fresh Minimal subagent; the distilled answer returns<br>
+    <b class="mono">!do on|off</b> — opposite-CoT mode: every prompt answered by a Standard subagent (wide catalog, "Let me" chain) until turned off; verify outranks it<br>
+    <b class="mono">!do &lt;task&gt;</b> — one-shot: fires the task into a detached Standard worker; evidence-backed report returns<br>
+    <b class="mono">!consolidate</b> — runs the memory consolidation pass now (also runs nightly)<br>
+    <b class="mono">!throne</b> — makes this window the main window: it now owns the task line's state &amp; workers; the old main becomes a satellite<br>
+    <b class="mono">!untie</b> — forks this window into its own lineage<br>
+    <b class="mono">!retie &lt;lineage&gt;</b> — merges a lineage back; contradictions listed for you<br>
+    <b class="mono">!ingest</b> — processes library/inbox: rename, index, PDF text sidecars<br>
+    <b class="mono">!status</b> — verify state · do-mode · exemptions · workers in flight · permission mode · build (watchdog uses plain <b class="mono">status</b>)<br>
+    <b class="mono">!rotate</b> — rotate this session now: state rewritten whole, ~8k raw tail carried, transcript archived, counter reset<br>
+    watchdog only (works when all else is down): <b class="mono">restart dsh|zcode · reboot · status · vpn up</b>
+  </div>
+
+</div>
+</body>
+</html>

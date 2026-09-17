@@ -1,0 +1,13 @@
+# agent-system nightly dream (SPEC §8.2). USER unit — unprivileged, never root.
+# Install: cp systemd/consolidate.* ~/.config/systemd/user/ && systemctl --user daemon-reload && systemctl --user enable --now consolidate.timer
+# Replicating on another host: set WorkingDirectory to that checkout.
+# Runs as the owner: `claude` on the PATH below and logged in; enable-linger so it runs without a desktop session.
+[Unit]
+Description=agent-system dream — copy memory, claude -p in the copy, DIFF.md (proposes only)
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/Desktop/stuff/Project 2/agent-system
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+Environment=DISABLE_AUTOUPDATER=1
+ExecStart=/usr/bin/python3 plumbing/consolidate.py

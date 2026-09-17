@@ -1,0 +1,13 @@
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {"hooks": [{"type": "command", "command": "python3 plumbing/status.py --line"}]}
+    ],
+    "SessionStart": [
+      {"hooks": [{"type": "command", "command": "sh .claude/hooks/session-start.sh"}]}
+    ],
+    "PreCompact": [
+      {"hooks": [{"type": "command", "command": "sh .claude/hooks/pre-compact.sh"}]}
+    ]
+  }
+}

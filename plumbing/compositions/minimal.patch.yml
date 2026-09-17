@@ -1,0 +1,23 @@
+# minimal — DeepSeek's own Minimal composition (shipped profile `sdk-minimal`)
+# with ONE change: the sandbox policy is workspace-write on the runtime's cwd
+# (= the brief's scope) instead of danger-full-access. Everything else — the
+# system prompt, the single persistent bash tool with DeepSeek's description
+# and 300 s timeout, no compaction — stays byte-identical, so the CoT the
+# model was post-trained on is preserved (SPEC §2, §4.2).
+# Applied as `--patch` over the profile; rows are addressed by id.
+- id: sandbox-policy
+  config:
+    mode: workspace-write
+    workspaceRoot: !!js process.cwd()
+- insert:                          # change 12 (§5.1 meter, §14 item 1a): ADD the harness's
+    - id: bash-sandbox             # sandbox-consuming bash EXECUTOR (the sdk profile's row): it
+      name: '@deepseek-ai/dsh-bash-sandbox'   # registers as ctx.shell, the service the hooks
+      config:                      # bridge injects and Minimal never provided (its persistent
+        timeoutMs: 60000           # bash runs over the PTY seam) — 'the tool layer is unchanged':
+                                   # no tool row, the model still sees the one persistent bash
+    - id: hooks-claude-code        # Claude Code hooks bridge (no shipped profile loads it;
+      name: '@deepseek-ai/dsh-hooks-claude-code'   # an id-only patch cannot add a row,
+      config:                      # `insert` appends one): a PostToolUse command hook cats
+        configPath: !!js process.env.DSH_HOOKS_CONFIG   # the worker's meter file and its JSON
+                                   # is one context line after the tool result; per worker
+                                   # (engine.py); fail-open

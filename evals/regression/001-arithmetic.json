@@ -1,0 +1,2 @@
+{"id": "001-arithmetic", "prompt": "What is 847 * 293? Reply with only the number.",
+ "grader": "contains", "expected": "248171", "trials": 3}

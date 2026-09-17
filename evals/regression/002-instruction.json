@@ -1,0 +1,2 @@
+{"id": "002-instruction", "prompt": "List exactly three colors, comma-separated, lowercase, nothing else.",
+ "grader": "regex", "expected": "^[a-z]+, ?[a-z]+, ?[a-z]+\\.?$", "trials": 3}

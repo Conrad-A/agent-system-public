@@ -1,0 +1,911 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agent System v2 — architecture</title>
+<meta name="description" content="One page: the lead, plumbing/ verbs, workers on two runtimes with the in-process supervisor, the report path and checker ladder, events and the Monitor wake, body vs genome, memory and the gate, the nightly dream, swarm mode.">
+<style>
+  :root { --bg:#f6f7fa; --panel:#ffffff; --line:#c9cfdb; --text:#1c2130; --dim:#5b6478; --muted:#eef1f6;
+    --lead:#2f6fd6; --lead-soft:#e8f0fd; --plumb:#6b5cc7; --plumb-soft:#eeebfa; --worker:#c77d16; --worker-soft:#fdf3e3;
+    --sup:#b04a2b; --sup-soft:#fbeae4; --genome:#3e8c5a; --genome-soft:#e6f4ea; --body:#616a7d; --body-soft:#eceff4;
+    --rep:#1f8f5f; --evt:#2f6fd6; --prop:#8a4fc9; --dream:#8a4fc9; --dream-soft:#f1e9fb; --swarm:#0f8a9a; --swarm-soft:#e3f4f6;
+    --gate:#c93a3a; --gate-soft:#fbe7e7; --ok:#1f8f5f; --no:#c93a3a; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#0f1218; --panel:#171b24; --line:#333b4d; --text:#e7eaf0; --dim:#a0a8ba; --muted:#1f2531;
+    --lead:#6ea3ff; --lead-soft:#182740; --plumb:#a99bf0; --plumb-soft:#241f3d; --worker:#f0b350; --worker-soft:#2f2617;
+    --sup:#f08a68; --sup-soft:#3a2119; --genome:#6fcf94; --genome-soft:#16301f; --body:#a3acc0; --body-soft:#1c2230;
+    --rep:#4fd39a; --evt:#6ea3ff; --prop:#c39bf5; --dream:#c39bf5; --dream-soft:#261b38; --swarm:#4fc9d8; --swarm-soft:#10303a;
+    --gate:#ff7a7a; --gate-soft:#3a1c1c; --ok:#4fd39a; --no:#ff7a7a; } }
+  :root[data-theme="dark"] { --bg:#0f1218; --panel:#171b24; --line:#333b4d; --text:#e7eaf0; --dim:#a0a8ba; --muted:#1f2531;
+    --lead:#6ea3ff; --lead-soft:#182740; --plumb:#a99bf0; --plumb-soft:#241f3d; --worker:#f0b350; --worker-soft:#2f2617;
+    --sup:#f08a68; --sup-soft:#3a2119; --genome:#6fcf94; --genome-soft:#16301f; --body:#a3acc0; --body-soft:#1c2230;
+    --rep:#4fd39a; --evt:#6ea3ff; --prop:#c39bf5; --dream:#c39bf5; --dream-soft:#261b38; --swarm:#4fc9d8; --swarm-soft:#10303a;
+    --gate:#ff7a7a; --gate-soft:#3a1c1c; --ok:#4fd39a; --no:#ff7a7a; }
+  html, body { margin:0; background:var(--bg); color:var(--text); font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
+  .wrap { max-width:1640px; margin:0 auto; padding:18px 16px 40px; }
+  h1 { font-size:1.35rem; margin:0 0 4px; }
+  .sub { color:var(--dim); font-size:.9rem; margin:0 0 10px; line-height:1.45; }
+  .legend { display:flex; flex-wrap:wrap; gap:8px 18px; font-size:.8rem; color:var(--dim); margin:0 0 12px; align-items:center; }
+  .legend span.k { display:inline-block; width:34px; height:0; border-top:2.5px solid; vertical-align:middle; margin-right:6px; }
+  .legend .ctl { border-color:var(--text); } .legend .evt { border-color:var(--evt); border-top-style:dashed; }
+  .legend .rep { border-color:var(--rep); } .legend .prop { border-color:var(--prop); border-top-style:dotted; } .legend .data { border-color:var(--body); }
+  .legend .pill { padding:1px 8px; border-radius:10px; border:1px solid var(--line); background:var(--panel); }
+  svg { width:100%; height:auto; display:block; background:var(--panel); border:1px solid var(--line); border-radius:10px; }
+  svg text { font-family: inherit; font-size:10.6px; fill:var(--text); }
+  svg .title { font-weight:700; }
+  svg .h { font-weight:700; fill:var(--dim); font-size:10.6px; letter-spacing:.2px; text-transform:uppercase; }
+  svg .b { fill:var(--dim); } svg .ok { fill:var(--ok); font-weight:700; } svg .no { fill:var(--no); font-weight:700; }
+  svg .box rect { fill:var(--panel); stroke:var(--line); stroke-width:1.2; }
+  svg .actor rect { fill:var(--gate-soft); stroke:var(--gate); } svg .actor .title { fill:var(--gate); }
+  svg .lead rect { fill:var(--lead-soft); stroke:var(--lead); stroke-width:1.6; } svg .lead .title { fill:var(--lead); }
+  svg .plumb rect { fill:var(--plumb-soft); stroke:var(--plumb); } svg .plumb .title { fill:var(--plumb); }
+  svg .worker rect { fill:var(--worker-soft); stroke:var(--worker); stroke-width:1.6; } svg .worker .title { fill:var(--worker); }
+  svg .engine rect, svg .plain rect { fill:var(--panel); stroke:var(--worker); } svg .engine .title, svg .plain .title { fill:var(--worker); }
+  svg .note rect { fill:var(--muted); stroke:var(--line); stroke-dasharray:4 3; }
+  svg .sup rect { fill:var(--sup-soft); stroke:var(--sup); } svg .sup .title { fill:var(--sup); }
+  svg .genome rect { fill:var(--genome-soft); stroke:var(--genome); } svg .genome .title { fill:var(--genome); }
+  svg .body rect { fill:var(--body-soft); stroke:var(--body); stroke-dasharray:6 3; } svg .body .title { fill:var(--body); }
+  svg .rep rect { fill:var(--panel); stroke:var(--rep); } svg .rep .title { fill:var(--rep); }
+  svg .events rect { fill:var(--lead-soft); stroke:var(--evt); stroke-dasharray:6 3; } svg .events .title { fill:var(--evt); }
+  svg .memory rect { fill:var(--genome-soft); stroke:var(--genome); } svg .memory .title { fill:var(--genome); }
+  svg .dream rect { fill:var(--dream-soft); stroke:var(--dream); } svg .dream .title { fill:var(--dream); }
+  svg .swarm rect { fill:var(--swarm-soft); stroke:var(--swarm); } svg .swarm .title { fill:var(--swarm); }
+  svg .lanes rect { fill:var(--panel); stroke:var(--swarm); } svg .lanes .title { fill:var(--swarm); }
+  svg .mini rect { fill:var(--panel); stroke:var(--line); } svg .mini .title { fill:var(--text); }
+  svg .gate rect { fill:var(--gate-soft); stroke:var(--gate); } svg .gate .title { fill:var(--gate); }
+  svg .plainnote rect { fill:none; stroke:none; } svg .plainnote text { fill:var(--dim); }
+  svg .divider { fill:var(--dim); font-size:10px; }
+  svg .arrow { fill:none; stroke-width:1.6; }
+  svg .arrow.ctl { stroke:var(--text); } svg .arrow.evt { stroke:var(--evt); stroke-dasharray:6 4; }
+  svg .arrow.rep { stroke:var(--rep); stroke-width:2; } svg .arrow.prop { stroke:var(--prop); stroke-dasharray:2 3; stroke-width:2; }
+  svg .arrow.data { stroke:var(--body); }
+  svg .mk.ctl path { fill:var(--text); } svg .mk.evt path { fill:var(--evt); } svg .mk.rep path { fill:var(--rep); } svg .mk.prop path { fill:var(--prop); } svg .mk.data path { fill:var(--body); }
+  svg .alabel { font-size:10px; fill:var(--dim); paint-order:stroke; stroke:var(--panel); stroke-width:4px; stroke-linejoin:round; }
+  svg .alabel.rep { fill:var(--rep); } svg .alabel.evt { fill:var(--evt); }
+  svg .mark circle { fill:var(--text); } svg .mark text { fill:var(--panel); font-weight:700; font-size:11px; }
+  ol.trace { font-size:.86rem; line-height:1.5; color:var(--text); margin:14px 0 0; padding-left:1.4em; max-width:1100px; }
+  ol.trace li { margin:2px 0; }
+  h2 { font-size:1.05rem; margin:24px 0 2px; }
+  pre.kickoff { font-size:.8rem; line-height:1.45; color:var(--text); background:var(--muted); border:1px solid var(--line); border-radius:8px; padding:12px 14px; margin:8px 0 0; white-space:pre-wrap; overflow-wrap:anywhere; max-width:1100px; }
+  .foot { color:var(--dim); font-size:.78rem; margin-top:14px; line-height:1.5; }
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>agent-system v2 — one lead directs, cheap workers grind, a human gate decides</h1>
+<p class="sub">Redrawn 2026-09-16 from SPEC.md §1–§8 and §11 as built. A frontier Claude Code session is the LEAD; DeepSeek V4.1 Flash workers run detached inside DeepSeek's engine (plain loop as the fallback) with a mechanical supervisor in the same process; every report passes the sanitizer and the checker ladder; the lead is woken by events; durable memory changes only through Conrad's gate; the nightly dream proposes on a copy. The v1 (v3.1) picture is <code>docs/history/agent-system-diagram.html</code>.</p>
+<div class="legend">
+  <span><span class="k ctl"></span>brief · verb · control</span>
+  <span><span class="k evt"></span>event · wake</span>
+  <span><span class="k rep"></span>report path</span>
+  <span><span class="k prop"></span>proposal (the dream's DIFF.md)</span>
+  <span><span class="k data"></span>state written to the body</span>
+  <span class="pill">✔ reaches a running engine turn &nbsp;·&nbsp; ✘ does not</span>
+  <span class="pill">① – ⑦ one brief, from /worker to a filed report (list below)</span>
+</div>
+<svg viewBox="0 0 1600 2007" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="dtitle">
+<title id="dtitle">agent-system v2 architecture</title>
+<defs>
+<marker id="m-ctl" class="mk ctl" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z"/></marker>
+<marker id="m-evt" class="mk evt" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z"/></marker>
+<marker id="m-rep" class="mk rep" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z"/></marker>
+<marker id="m-prop" class="mk prop" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z"/></marker>
+<marker id="m-data" class="mk data" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z"/></marker>
+</defs>
+<text class="divider" x="1420.0" y="374.4000000000001" text-anchor="middle">— committed above · never committed below —</text>
+<g class="box actor" id="conrad"><rect x="20" y="74" width="340" height="78" rx="6"/>
+<text class="title" x="29" y="95.2" font-size="12.2">CONRAD — initiates everything (autonomy</text>
+<text class="title" x="29" y="110.3" font-size="12.2">principle: 24/7 access, not autonomy) and is THE</text>
+<text class="title" x="29" y="125.4" font-size="12.2">GATE: facts, dream hunks, sweep artifacts,</text>
+<text class="title" x="29" y="140.5" font-size="12.2">verdicts.</text>
+</g>
+<g class="box lead" id="lead"><rect x="20" y="166.4" width="340" height="429" rx="6"/>
+<text class="title" x="29" y="187.6" font-size="12.2">THE LEAD — one Claude Code session in this repo</text>
+<text class="title" x="29" y="202.7" font-size="12.2">(claude-fable-5-1, Max)</text>
+<text x="29.0" y="216.2">Owns the plan, ambiguity, the review of every report, the</text>
+<text x="29.0" y="229.8">gate, the lineage's state.md. Never grinds: briefs and</text>
+<text x="29.0" y="243.4">reports only — a worker transcript never enters its</text>
+<text x="29.0" y="257.0">context.</text>
+<text class="h" x="29.0" y="270.6">Hooks (.claude/settings.json)</text>
+<text class="b" x="29.0" y="284.2">•</text>
+<text x="41.0" y="284.2">UserPromptSubmit → status.py --line: context size from</text>
+<text x="41.0" y="297.8">the transcript's usage (ROTATE AT NEXT BOUNDARY past</text>
+<text x="41.0" y="311.4">100k, ROTATE NOW past 128k), state.md age (STALE after</text>
+<text x="41.0" y="325.0">10 prompts), one line per running or waiting worker —</text>
+<text x="41.0" y="338.6">the safety net under the Monitor.</text>
+<text class="b" x="29.0" y="352.2">•</text>
+<text x="41.0" y="352.2">SessionStart → session-start.sh: injects</text>
+<text x="41.0" y="365.8">lineages/&lt;id&gt;/state.md and the newest handoff, so the</text>
+<text x="41.0" y="379.4">next session continues without re-asking.</text>
+<text class="b" x="29.0" y="393.0">•</text>
+<text x="41.0" y="393.0">PreCompact → pre-compact.sh: copies state.md + the</text>
+<text x="41.0" y="406.6">transcript tail to a handoff BEFORE compaction and logs</text>
+<text x="41.0" y="420.2">a compaction event (a missed rotation).</text>
+<text class="b" x="29.0" y="433.8">•</text>
+<text x="41.0" y="433.8">/rotate → rotate.py: state.md rewritten WHOLE</text>
+<text x="41.0" y="447.4">(decisions, open threads, focus), the handoff written</text>
+<text x="41.0" y="461.0">to handoffs/&lt;ts&gt;.md, the session ends.</text>
+<text class="h" x="29.0" y="474.6">Commands (.claude/commands/ — each one a</text>
+<text class="h" x="29.0" y="488.2">plumbing/ verb)</text>
+<text x="29.0" y="501.8">/worker · /status · /steer · /stop · /resume · /check ·</text>
+<text x="29.0" y="515.4">/swarm · /consolidate · /rotate</text>
+<text class="h" x="29.0" y="529.0">Lineage discipline</text>
+<text x="29.0" y="542.6">one project directory = one lineage; ONE writer (the</text>
+<text x="29.0" y="556.2">session that opened it); state.md regenerated at every</text>
+<text x="29.0" y="569.8">boundary; durable facts go through the gate, never into</text>
+<text x="29.0" y="583.4">handoffs.</text>
+</g>
+<g class="box plumb" id="plumb"><rect x="388" y="74" width="250" height="458" rx="6"/>
+<text class="title" x="397" y="95.2" font-size="12.2">plumbing/ — the verbs (stdlib,</text>
+<text class="title" x="397" y="110.3" font-size="12.2">files, no service; the lead's ONLY</text>
+<text class="title" x="397" y="125.4" font-size="12.2">way to a worker)</text>
+<text class="h" x="397.0" y="138.9">do.py — /worker</text>
+<text x="397.0" y="152.5">registers the brief in the lineage</text>
+<text x="397.0" y="166.1">registry (state running) and starts</text>
+<text x="397.0" y="179.7">worker.py with setsid: detached, it</text>
+<text x="397.0" y="193.3">outlives the session. Never ~/Desktop as</text>
+<text x="397.0" y="206.9">a whole.</text>
+<text class="h" x="397.0" y="220.5">status.py — /status</text>
+<text x="397.0" y="234.1">registry, waiting ask-backs, recent</text>
+<text x="397.0" y="247.7">reports, sweeps, the cost line; --line is</text>
+<text x="397.0" y="261.3">the status-line hook</text>
+<text class="h" x="397.0" y="274.9">steer.py — /steer &lt;id&gt; &lt;note&gt;</text>
+<text x="397.0" y="288.5">writes the worker's steer file</text>
+<text class="h" x="397.0" y="302.1">stop.py — /stop &lt;id&gt; [--kill]</text>
+<text x="397.0" y="315.7">the stop file (seen within a second);</text>
+<text x="397.0" y="329.3">--kill = SIGTERM; either way a PARTIAL</text>
+<text x="397.0" y="342.9">report</text>
+<text class="h" x="397.0" y="356.5">resume.py — /resume &lt;id&gt; &lt;note&gt;</text>
+<text x="397.0" y="370.1">a WAITING worker: the note becomes its</text>
+<text x="397.0" y="383.7">answer file, same session; a FINISHED</text>
+<text x="397.0" y="397.3">one: a FRESH worker briefed from its</text>
+<text x="397.0" y="410.9">report + the note</text>
+<text class="h" x="397.0" y="424.5">check.py — /check &lt;id&gt; [rungs]</text>
+<text x="397.0" y="438.1">runs the ladder over the scope, re-stamps</text>
+<text x="397.0" y="451.7">the report</text>
+<text class="h" x="397.0" y="465.3">swarm.py — /swarm &lt;question&gt;</text>
+<text x="397.0" y="478.9">plan → lanes detached, collect, sanitize,</text>
+<text x="397.0" y="492.5">scorecard</text>
+<text class="h" x="397.0" y="506.1">consolidate.py · apply_dream.py</text>
+<text x="397.0" y="519.7">the nightly dream and its gate (below)</text>
+</g>
+<g class="box worker" id="worker"><rect x="666" y="74" width="566" height="935" rx="6"/>
+<text class="title" x="675" y="95.2" font-size="12.2">WORKER PROCESS — worker.py, the adapter: brief → runtime → report · model</text>
+<text class="title" x="675" y="110.3" font-size="12.2">deepseek-flash (V4.1 Flash) · cwd = the brief's scope · one process = one session</text>
+<text class="title" x="675" y="125.4" font-size="12.2">(an ask-back blocks it; it outlives the lead)</text>
+</g>
+<g class="box engine" id="engine"><rect x="675.0" y="132.3" width="270.0" height="415" rx="6"/>
+<text class="title" x="684.0" y="153.5" font-size="12.2">ENGINE (default) — DeepSeek Harness</text>
+<text class="title" x="684.0" y="168.6" font-size="12.2">via deepseek-harness-sdk (no UI)</text>
+<text x="684.0" y="182.1">one subprocess per worker, JSON-RPC on</text>
+<text x="684.0" y="195.7">stdio; three methods only: initialize ·</text>
+<text x="684.0" y="209.3">session/prompt · shutdown. DSH_HOME =</text>
+<text x="684.0" y="222.9">$AGENT_RUNTIME/dsh-home; the trajectory is</text>
+<text x="684.0" y="236.5">sessions/&lt;cwd&gt;/&lt;wid&gt;/session.v3.jsonl</text>
+<text class="h" x="684.0" y="250.1">presets: profile + patch</text>
+<text class="h" x="684.0" y="263.7">(plumbing/compositions/)</text>
+<text class="b" x="684.0" y="277.3">•</text>
+<text x="696.0" y="277.3">minimal = sdk-minimal + minimal.patch.yml:</text>
+<text x="696.0" y="290.9">persistent bash only, sandbox</text>
+<text x="696.0" y="304.5">workspace-write (writes fenced; reads</text>
+<text x="696.0" y="318.1">fenced by the scope trip)</text>
+<text class="b" x="684.0" y="331.7">•</text>
+<text x="696.0" y="331.7">standard = sdk + standard.patch.yml: the</text>
+<text x="696.0" y="345.3">wide catalog, approval never, compaction /</text>
+<text x="696.0" y="358.9">web / ralph / workflow / telemetry OFF,</text>
+<text x="696.0" y="372.5">bash 300 s</text>
+<text class="h" x="684.0" y="386.1">per worker</text>
+<text class="b" x="684.0" y="399.7">•</text>
+<text x="696.0" y="399.7">PKG_NATIVE_CACHE_PATH =</text>
+<text x="696.0" y="413.3">dsh-home/cache/&lt;wid&gt; (the harness's</text>
+<text x="696.0" y="426.9">native-module cache; removed at worker</text>
+<text x="696.0" y="440.5">end) — the same dir holds hooks.json</text>
+<text class="b" x="684.0" y="454.1">•</text>
+<text x="696.0" y="454.1">HOOKS BRIDGE (both patches): PostToolUse →</text>
+<text x="696.0" y="467.7">cat meter-&lt;wid&gt;.txt → one context line</text>
+<text x="696.0" y="481.3">after every tool result past 20k;</text>
+<text x="696.0" y="494.9">fail-open</text>
+<text class="b" x="684.0" y="508.5">•</text>
+<text x="696.0" y="508.5">steer = a follow-up prompt queued on the</text>
+<text x="696.0" y="522.1">session by the watcher thread; stop = the</text>
+<text x="696.0" y="535.7">watcher closes the runtime → PARTIAL</text>
+</g>
+<g class="box plain" id="plain"><rect x="953.0" y="132.3" width="270.0" height="415" rx="6"/>
+<text class="title" x="962.0" y="153.5" font-size="12.2">PLAIN — the fallback, narrow and loud</text>
+<text x="962.0" y="167.0">engine → plain ONLY when the engine cannot</text>
+<text x="962.0" y="180.6">start (import, missing binary, handshake);</text>
+<text x="962.0" y="194.2">never mid-task, never on task failure</text>
+<text x="962.0" y="207.8">direct API through clients.py (stdlib</text>
+<text x="962.0" y="221.4">urllib, reasoning_content replayed), the v1</text>
+<text x="962.0" y="235.0">16-tool catalog, one-shot bash, a text step</text>
+<text x="962.0" y="248.6">log; the jail is the brief's scope</text>
+<text x="962.0" y="262.2">steer = the steer file read before each</text>
+<text x="962.0" y="275.8">model call; stop = the stop file between</text>
+<text x="962.0" y="289.4">steps; ask-back in-process like the engine</text>
+<text x="962.0" y="303.0">stamped as runtime: plain (fallback —</text>
+<text x="962.0" y="316.6">&lt;reason&gt;) in the report, /status and the</text>
+<text x="962.0" y="330.2">ledger — never only in a log</text>
+<text x="962.0" y="343.8">selection: --runtime &gt; WORKER_RUNTIME in</text>
+<text x="962.0" y="357.4">.env &gt; engine</text>
+</g>
+<g class="box note" id="chan"><rect x="675.0" y="555.7000000000004" width="548.0" height="115" rx="6"/>
+<text class="title" x="684.0" y="576.9" font-size="12.2">Into a RUNNING engine turn — what reaches it and what does not</text>
+<text class="ok" x="684.0" y="590.4">✔</text>
+<text x="696.0" y="590.4">the TOOL RESULT (the model's next input; the meter line rides on it)</text>
+<text class="ok" x="684.0" y="604.0">✔</text>
+<text x="696.0" y="604.0">the HOOK: the PostToolUse context line from the hooks bridge (the meter; the only channel</text>
+<text x="696.0" y="617.6">past the harness into a live turn)</text>
+<text class="no" x="684.0" y="631.2">✘</text>
+<text x="696.0" y="631.2">STEER: queued as the NEXT turn's prompt, never seen mid-turn — on the engine it is an event</text>
+<text x="696.0" y="644.8">for the lead; the BRIEF is the only channel into a running lane. On plain, steer lands</text>
+<text x="696.0" y="658.4">before the next call.</text>
+</g>
+<g class="box sup" id="sup"><rect x="675.0" y="678.4000000000005" width="548.0" height="320" rx="6"/>
+<text class="title" x="684.0" y="699.6" font-size="12.2">SUPERVISOR — inside the worker process: mechanical, no model, every tool call and</text>
+<text class="title" x="684.0" y="714.7" font-size="12.2">model call (§5.1)</text>
+<text class="b" x="684.0" y="728.2">•</text>
+<text x="696.0" y="728.2">repeat: the same tool call (name + args) ×3</text>
+<text x="696.0" y="741.8">→ stop</text>
+<text class="b" x="684.0" y="755.4">•</text>
+<text x="696.0" y="755.4">error loop: the same error on 3 consecutive</text>
+<text x="696.0" y="769.0">results (a LANE: the same non-zero exit +</text>
+<text x="696.0" y="782.6">last line, never a word in content) → stop</text>
+<text class="b" x="684.0" y="796.2">•</text>
+<text x="696.0" y="796.2">stall: 8 steps without new ground (a path;</text>
+<text x="696.0" y="809.8">for a lane a new search or fetched url too)</text>
+<text x="696.0" y="823.4">→ stop</text>
+<text class="b" x="684.0" y="837.0">•</text>
+<text x="696.0" y="837.0">budget: steps &gt; cap · elapsed &gt; timeout ·</text>
+<text x="696.0" y="850.6">spend &gt; alert → stop</text>
+<text class="b" x="684.0" y="864.2">•</text>
+<text x="696.0" y="864.2">scope: a path outside the brief's scope →</text>
+<text x="696.0" y="877.8">stop; for a LANE an event only — but the</text>
+<text x="696.0" y="891.4">lane fence (.., $DSH_HOME, $AGENT_RUNTIME,</text>
+<text x="696.0" y="905.0">SEARCH_AUTH_FILE, the repo's .env) → stop;</text>
+<text x="696.0" y="918.6">only path-keyed args and command words are</text>
+<text x="696.0" y="932.2">scanned, never content</text>
+<text class="b" x="684.0" y="945.8">•</text>
+<text x="696.0" y="945.8">finish: turn/end max-tokens or error ·</text>
+<text x="696.0" y="959.4">reasoning heuristics (try again, the plan</text>
+<text x="696.0" y="973.0">restated)</text>
+<text class="b" x="954.0" y="728.2">•</text>
+<text x="966.0" y="728.2">context &gt; 26k on projection → STEER 'wrap</text>
+<text x="966.0" y="741.8">up, report now' (plain: before the next</text>
+<text x="966.0" y="755.4">call; engine: an event only)</text>
+<text class="b" x="954.0" y="769.0">•</text>
+<text x="966.0" y="769.0">context &gt; 32k → STOP after the call's tool</text>
+<text x="966.0" y="782.6">calls ran (a write persists), PARTIAL; a</text>
+<text x="966.0" y="796.2">final message over the line is kept as</text>
+<text x="966.0" y="809.8">done-at-cap</text>
+<text class="b" x="954.0" y="823.4">•</text>
+<text x="966.0" y="823.4">meter (not a trip): past 20k every tool</text>
+<text x="966.0" y="837.0">result carries 'context Nk of 32k; report by</text>
+<text x="966.0" y="850.6">call M' — plain appends it, the engine's</text>
+<text x="966.0" y="864.2">hook delivers it</text>
+<text class="b" x="954.0" y="877.8">•</text>
+<text x="966.0" y="877.8">checkpoint every 10 steps → event. An</text>
+<text x="966.0" y="891.4">ask-back is NOT a trip: the worker writes</text>
+<text x="966.0" y="905.0">its question, state waiting, and blocks on</text>
+<text x="966.0" y="918.6">the answer file</text>
+<text x="954.0" y="932.2">ON TRIP: stop on both runtimes (the SDK has no</text>
+<text x="954.0" y="945.8">cancel, no pause) → PARTIAL report with the</text>
+<text x="954.0" y="959.4">evidence, registry failed, event trip:&lt;rule&gt; →</text>
+<text x="954.0" y="973.0">the lead resumes with a fresh worker or takes</text>
+<text x="954.0" y="986.6">over</text>
+</g>
+<g class="box genome" id="genome"><rect x="1260" y="74" width="320" height="279" rx="6"/>
+<text class="title" x="1269" y="95.2" font-size="12.2">GENOME — the repo (git, main; remote backup</text>
+<text class="title" x="1269" y="110.3" font-size="12.2">after every meaningful commit)</text>
+<text class="b" x="1269.0" y="123.8">•</text>
+<text x="1281.0" y="123.8">SPEC.md (canonical) · CLAUDE.md · HANDOFF.md ·</text>
+<text x="1281.0" y="137.4">KICKOFF.md (the replication prompt) · MIGRATION.md</text>
+<text x="1281.0" y="151.0">· configs/ (stable pins, prices)</text>
+<text class="b" x="1269.0" y="164.6">•</text>
+<text x="1281.0" y="164.6">plumbing/: the verbs, worker.py, supervisor.py,</text>
+<text x="1281.0" y="178.2">runtimes/{engine,plain}.py, compositions/,</text>
+<text x="1281.0" y="191.8">sanitize.py, check.py, consolidate.py,</text>
+<text x="1281.0" y="205.4">apply_dream.py, lineage.py, events.py, costs.py,</text>
+<text x="1281.0" y="219.0">tests/run_tests.py (hermetic)</text>
+<text class="b" x="1269.0" y="232.6">•</text>
+<text x="1281.0" y="232.6">.claude/: commands/, hooks/, settings.json ·</text>
+<text x="1281.0" y="246.2">tools/: web_search.py, web_fetch.py</text>
+<text class="b" x="1269.0" y="259.8">•</text>
+<text x="1281.0" y="259.8">memory/: facts.md, procedures.md, style.md,</text>
+<text x="1281.0" y="273.4">INDEX.md, FORMAT.md, adjudication-log.md, prompts/</text>
+<text x="1281.0" y="287.0">(dream, adaptivemem) — committed, gated</text>
+<text class="b" x="1269.0" y="300.6">•</text>
+<text x="1281.0" y="300.6">gitignored inside memory/: artifacts/*/ (sweeps),</text>
+<text x="1281.0" y="314.2">archives/, library/ — body, not genome</text>
+<text class="b" x="1269.0" y="327.8">•</text>
+<text x="1281.0" y="327.8">.env (gitignored, mode 600): DEEPSEEK_API_KEY,</text>
+<text x="1281.0" y="341.4">AGENT_RUNTIME, PARALLEL_API_KEY, EXA_API_KEY</text>
+</g>
+<g class="box body" id="body"><rect x="1260" y="387.4000000000001" width="320" height="266" rx="6"/>
+<text class="title" x="1269" y="408.6" font-size="12.2">BODY — $AGENT_RUNTIME (outside the repo, never</text>
+<text class="title" x="1269" y="423.7" font-size="12.2">committed)</text>
+<text class="b" x="1269.0" y="437.2">•</text>
+<text x="1281.0" y="437.2">lineages/index.json → &lt;id&gt;/: state.md, the registry</text>
+<text x="1281.0" y="450.8">(atomic + locked writes), worker-&lt;hex&gt;.log,</text>
+<text x="1281.0" y="464.4">report-&lt;hex&gt;.json, meter-&lt;hex&gt;.txt, the steer /</text>
+<text x="1281.0" y="478.0">stop / answer files</text>
+<text class="b" x="1269.0" y="491.6">•</text>
+<text x="1281.0" y="491.6">handoffs/&lt;ts&gt;.md (state.md + transcript tail)</text>
+<text class="b" x="1269.0" y="505.2">•</text>
+<text x="1281.0" y="505.2">events.jsonl — the lead's wake channel (below)</text>
+<text class="b" x="1269.0" y="518.8">•</text>
+<text x="1281.0" y="518.8">costs.jsonl — the ledger (rows priced at the</text>
+<text x="1281.0" y="532.4">start-time tier) · scorecard.jsonl — one row per</text>
+<text x="1281.0" y="546.0">sweep</text>
+<text class="b" x="1269.0" y="559.6">•</text>
+<text x="1281.0" y="559.6">dream/&lt;date&gt;/: memory/ copy, archives/, DIFF.md,</text>
+<text x="1281.0" y="573.2">summary, log</text>
+<text class="b" x="1269.0" y="586.8">•</text>
+<text x="1281.0" y="586.8">swarms/&lt;id&gt;/: sweep status, SEARCH_AUTH_FILE (mode</text>
+<text x="1281.0" y="600.4">600, deleted at sweep end), the search log</text>
+<text class="b" x="1269.0" y="614.0">•</text>
+<text x="1281.0" y="614.0">dsh-home/: sessions/&lt;cwd&gt;/&lt;wid&gt;/session.v3.jsonl</text>
+<text x="1281.0" y="627.6">(trajectories), cache/&lt;wid&gt;/ (native cache +</text>
+<text x="1281.0" y="641.2">hooks.json), profiles</text>
+</g>
+<g class="box rep" id="r1"><rect x="388" y="1064.600000000001" width="190" height="199" rx="6"/>
+<text class="title" x="397" y="1085.8" font-size="12.2">1 · the final message</text>
+<text x="397.0" y="1099.3">the worker's last message IS</text>
+<text x="397.0" y="1112.9">the report block: did ·</text>
+<text x="397.0" y="1126.5">changed · decisions ·</text>
+<text x="397.0" y="1140.1">surprises · open_items ·</text>
+<text x="397.0" y="1153.7">evidence · based_on · runtime</text>
+<text x="397.0" y="1167.3">· data_tier · cost</text>
+</g>
+<g class="box rep" id="r2"><rect x="590" y="1064.600000000001" width="205" height="199" rx="6"/>
+<text class="title" x="599" y="1085.8" font-size="12.2">2 · lineage.file_report +</text>
+<text class="title" x="599" y="1100.9" font-size="12.2">sanitizer</text>
+<text x="599.0" y="1114.4">instruction-shaped text escaped</text>
+<text x="599.0" y="1128.0">in place, a marker line prepended</text>
+<text x="599.0" y="1141.6">— reports are DATA. State done</text>
+<text x="599.0" y="1155.2">only if the runtime finished AND</text>
+<text x="599.0" y="1168.8">evidence exists; else failed with</text>
+<text x="599.0" y="1182.4">a PARTIAL</text>
+</g>
+<g class="box rep" id="r3"><rect x="807" y="1064.600000000001" width="205" height="199" rx="6"/>
+<text class="title" x="816" y="1085.8" font-size="12.2">3 · report-&lt;hex&gt;.json</text>
+<text class="title" x="816" y="1100.9" font-size="12.2">(registry, body)</text>
+<text x="816.0" y="1114.4">≤ 500 tokens to the lead, bulk to</text>
+<text x="816.0" y="1128.0">files by path; trajectory path</text>
+<text x="816.0" y="1141.6">and runtime (fallback named)</text>
+<text x="816.0" y="1155.2">stamped; cost row to the ledger</text>
+</g>
+<g class="box rep" id="r4"><rect x="1024" y="1064.600000000001" width="216" height="199" rx="6"/>
+<text class="title" x="1033" y="1085.8" font-size="12.2">4 · CHECKER LADDER — check.py,</text>
+<text class="title" x="1033" y="1100.9" font-size="12.2">reject-authorized, strongest</text>
+<text class="title" x="1033" y="1116.0" font-size="12.2">rung first</text>
+<text x="1033.0" y="1129.5">R1 proof (Lean/SMT — not on this</text>
+<text x="1033.0" y="1143.1">host) · R2 compile (py_compile) ·</text>
+<text x="1033.0" y="1156.7">R3 lint (not here) · R4 tests (the</text>
+<text x="1033.0" y="1170.3">brief's command) · R5 diffs / exit</text>
+<text x="1033.0" y="1183.9">codes / expected files. The</text>
+<text x="1033.0" y="1197.5">definition-of-done names the rungs;</text>
+<text x="1033.0" y="1211.1">results are stamped into the</text>
+<text x="1033.0" y="1224.7">report; a failure is a fact no</text>
+<text x="1033.0" y="1238.3">model overturns; 'not available' is</text>
+<text x="1033.0" y="1251.9">never a pass</text>
+</g>
+<g class="box events" id="events"><rect x="388" y="1307.9" width="844" height="60" rx="6"/>
+<text class="title" x="397" y="1329.1" font-size="12.2">events.jsonl — $AGENT_RUNTIME, one JSON line: ts · lineage · worker · event · detail</text>
+<text x="397.0" y="1342.6">trip:&lt;rule&gt; · ask · checkpoint · done · failed · resumed · scope (a lane's outside path) · compaction (the PreCompact hook) · swarm_done /</text>
+<text x="397.0" y="1356.2">swarm_partial · dream / dream_failed / dream_skipped</text>
+</g>
+<g class="box memory" id="memory"><rect x="20" y="1408.1999999999998" width="760" height="206" rx="6"/>
+<text class="title" x="29" y="1429.4" font-size="12.2">MEMORY and THE GATE (§8.1)</text>
+</g>
+<g class="box mini" id="m1"><rect x="29.0" y="1436.2999999999997" width="179.5" height="87" rx="6"/>
+<text class="title" x="38.0" y="1457.5" font-size="12.2">workers PROPOSE</text>
+<text x="38.0" y="1471.0">facts in their reports (and</text>
+<text x="38.0" y="1484.6">lanes' sources) — never a</text>
+<text x="38.0" y="1498.2">write</text>
+</g>
+<g class="box mini" id="m2"><rect x="216.5" y="1436.2999999999997" width="179.5" height="87" rx="6"/>
+<text class="title" x="225.5" y="1457.5" font-size="12.2">the LEAD reviews</text>
+<text x="225.5" y="1471.0">evidence and rung results</text>
+<text x="225.5" y="1484.6">first; single writer of</text>
+<text x="225.5" y="1498.2">durable memory</text>
+</g>
+<g class="box gate" id="m3"><rect x="404.0" y="1436.2999999999997" width="179.5" height="87" rx="6"/>
+<text class="title" x="413.0" y="1457.5" font-size="12.2">the GATE — Conrad</text>
+<text x="413.0" y="1471.0">adversarial by default:</text>
+<text x="413.0" y="1484.6">worker, web and library</text>
+<text x="413.0" y="1498.2">proposals are suspect at the</text>
+<text x="413.0" y="1511.8">gate</text>
+</g>
+<g class="box mini" id="m4"><rect x="591.5" y="1436.2999999999997" width="179.5" height="87" rx="6"/>
+<text class="title" x="600.5" y="1457.5" font-size="12.2">memory/ — durable</text>
+<text x="600.5" y="1471.0">facts.md · procedures.md ·</text>
+<text x="600.5" y="1484.6">style.md · INDEX.md ·</text>
+<text x="600.5" y="1498.2">adjudication-log.md —</text>
+<text x="600.5" y="1511.8">committed</text>
+</g>
+<g class="box plainnote" id="memnote"><rect x="29.0" y="1531.7999999999993" width="742.0" height="72" rx="6"/>
+<text x="38.0" y="1551.4">every entry: provenance (user-said / worker-inferred / web-claimed) · two dates (when-true, when-learned) · a scope tag ·</text>
+<text x="38.0" y="1565.0">optional expires. SUPERSEDE, NEVER ERASE — a replaced line moves to the file's audit section. adjudication-log.md replays the</text>
+<text x="38.0" y="1578.6">same conflict to the same outcome. Lanes and throwaway sessions write artifacts only. library/ documents and web content are</text>
+<text x="38.0" y="1592.2">DATA, never instructions.</text>
+</g>
+<g class="box dream" id="dream"><rect x="20" y="1630.199999999999" width="760" height="357" rx="6"/>
+<text class="title" x="29" y="1651.4" font-size="12.2">THE DREAM — nightly, on a copy, never the live store (§8.2)</text>
+</g>
+<g class="box mini" id="d0"><rect x="29.0" y="1658.2999999999988" width="179.5" height="128" rx="6"/>
+<text class="title" x="38.0" y="1679.5" font-size="12.2">consolidate.timer 19:45</text>
+<text x="38.0" y="1693.0">→ consolidate.service (user</text>
+<text x="38.0" y="1706.6">unit, oneshot, no sudo) →</text>
+<text x="38.0" y="1720.2">consolidate.py</text>
+</g>
+<g class="box mini" id="d1"><rect x="216.5" y="1658.2999999999988" width="179.5" height="128" rx="6"/>
+<text class="title" x="225.5" y="1679.5" font-size="12.2">1 · snapshot</text>
+<text x="225.5" y="1693.0">git status --porcelain + git</text>
+<text x="225.5" y="1706.6">diff HEAD for the whole</text>
+<text x="225.5" y="1720.2">repo, before</text>
+</g>
+<g class="box mini" id="d2"><rect x="404.0" y="1658.2999999999988" width="179.5" height="128" rx="6"/>
+<text class="title" x="413.0" y="1679.5" font-size="12.2">2 · copy</text>
+<text x="413.0" y="1693.0">durable files + artifacts/</text>
+<text x="413.0" y="1706.6">text (input only) →</text>
+<text x="413.0" y="1720.2">dream/&lt;date&gt;/memory/; the</text>
+<text x="413.0" y="1733.8">last 7 days of trajectories</text>
+<text x="413.0" y="1747.4">and handoffs read-only as</text>
+<text x="413.0" y="1761.0">archives/; non-UTF-8 skipped</text>
+</g>
+<g class="box mini" id="d3"><rect x="591.5" y="1658.2999999999988" width="179.5" height="128" rx="6"/>
+<text class="title" x="600.5" y="1679.5" font-size="12.2">3 · dream on the COPY</text>
+<text x="600.5" y="1693.0">claude -p --model</text>
+<text x="600.5" y="1706.6">claude-fable-5-1</text>
+<text x="600.5" y="1720.2">--allowedTools</text>
+<text x="600.5" y="1733.8">Read,Grep,Glob,Write,Edit,</text>
+<text x="600.5" y="1747.4">prompt</text>
+<text x="600.5" y="1761.0">memory/prompts/dream.md, cwd</text>
+<text x="600.5" y="1774.6">= the copy; no Bash</text>
+</g>
+<g class="box gate" id="d4"><rect x="29.0" y="1794.599999999998" width="179.5" height="130" rx="6"/>
+<text class="title" x="38.0" y="1815.8" font-size="12.2">4 · FENCE CHECK</text>
+<text x="38.0" y="1829.3">snapshot again: any change</text>
+<text x="38.0" y="1842.9">outside dream/&lt;date&gt;/ → the</text>
+<text x="38.0" y="1856.5">night FAILED (event names</text>
+<text x="38.0" y="1870.1">the paths), no DIFF.md,</text>
+<text x="38.0" y="1883.7">nothing reverted</text>
+</g>
+<g class="box mini" id="d5"><rect x="216.5" y="1794.599999999998" width="179.5" height="130" rx="6"/>
+<text class="title" x="225.5" y="1815.8" font-size="12.2">5 · DIFF.md = the</text>
+<text class="title" x="225.5" y="1830.9" font-size="12.2">proposal</text>
+<text x="225.5" y="1844.4">live memory/ vs the copy,</text>
+<text x="225.5" y="1858.0">hunks numbered, + summary;</text>
+<text x="225.5" y="1871.6">event dream</text>
+</g>
+<g class="box gate" id="d6"><rect x="404.0" y="1794.599999999998" width="179.5" height="130" rx="6"/>
+<text class="title" x="413.0" y="1815.8" font-size="12.2">the GATE — Conrad</text>
+<text x="413.0" y="1829.3">reads DIFF.md in the lead</text>
+<text x="413.0" y="1842.9">session; accepts all or hunk</text>
+<text x="413.0" y="1856.5">by hunk; rejected hunks</text>
+<text x="413.0" y="1870.1">vanish with the copy</text>
+</g>
+<g class="box mini" id="d7"><rect x="591.5" y="1794.599999999998" width="179.5" height="130" rx="6"/>
+<text class="title" x="600.5" y="1815.8" font-size="12.2">apply_dream.py &lt;date&gt;</text>
+<text class="title" x="600.5" y="1830.9" font-size="12.2">[--hunks 2,5]</text>
+<text x="600.5" y="1844.4">deletes become audit</text>
+<text x="600.5" y="1858.0">supersessions; hunks</text>
+<text x="600.5" y="1871.6">touching style.md,</text>
+<text x="600.5" y="1885.2">adjudication-log.md, audit</text>
+<text x="600.5" y="1898.8">sections or prompts/ are</text>
+<text x="600.5" y="1912.4">rejected → the lead commits</text>
+</g>
+<g class="box plainnote" id="dnote"><rect x="29.0" y="1932.3999999999976" width="742.0" height="45" rx="6"/>
+<text x="38.0" y="1952.0">claude -p non-zero, timeout or an empty reply → dream_skipped (no retry, no fallback) · a crash after the copy → dream_failed,</text>
+<text x="38.0" y="1965.6">exit 3 · the one thing that runs without Conrad, and it only proposes.</text>
+</g>
+<g class="box swarm" id="swarm"><rect x="800" y="1408.1999999999998" width="780" height="536" rx="6"/>
+<text class="title" x="809" y="1429.4" font-size="12.2">SWARM MODE — research fan-out, opt-in (§7)</text>
+</g>
+<g class="box mini" id="s0"><rect x="809.0" y="1436.2999999999997" width="184.5" height="101" rx="6"/>
+<text class="title" x="818.0" y="1457.5" font-size="12.2">/swarm &lt;question&gt;</text>
+<text x="818.0" y="1471.0">the lead; a sweep never</text>
+<text x="818.0" y="1484.6">launches before Conrad</text>
+<text x="818.0" y="1498.2">supplies the question</text>
+</g>
+<g class="box gate" id="s1"><rect x="1001.5" y="1436.2999999999997" width="184.5" height="101" rx="6"/>
+<text class="title" x="1010.5" y="1457.5" font-size="12.2">decomposability gate</text>
+<text x="1010.5" y="1471.0">independent subtasks? low</text>
+<text x="1010.5" y="1484.6">merge cost? divergence</text>
+<text x="1010.5" y="1498.2">acceptable? 3/3 fan out · 2/3</text>
+<text x="1010.5" y="1511.8">the lead merges · ≤1/3 no</text>
+<text x="1010.5" y="1525.4">swarm</text>
+</g>
+<g class="box mini" id="s2"><rect x="1194.0" y="1436.2999999999997" width="184.5" height="101" rx="6"/>
+<text class="title" x="1203.0" y="1457.5" font-size="12.2">plan → state.md</text>
+<text x="1203.0" y="1471.0">sub-questions, lane</text>
+<text x="1203.0" y="1484.6">assignments, what each lane</text>
+<text x="1203.0" y="1498.2">must NOT cover — written</text>
+<text x="1203.0" y="1511.8">before spawning</text>
+</g>
+<g class="box mini" id="s3"><rect x="1386.5" y="1436.2999999999997" width="184.5" height="101" rx="6"/>
+<text class="title" x="1395.5" y="1457.5" font-size="12.2">swarm.py DETACHED</text>
+<text x="1395.5" y="1471.0">setsid: lanes keep running</text>
+<text x="1395.5" y="1484.6">through a lead rotation; caps</text>
+<text x="1395.5" y="1498.2">enforced here, not by any</text>
+<text x="1395.5" y="1511.8">model</text>
+</g>
+<g class="box lanes" id="lanes"><rect x="809.0" y="1545.3999999999992" width="762.0" height="252" rx="6"/>
+<text class="title" x="818.0" y="1566.6" font-size="12.2">≤ 5 LANES — minimal workers, depth 1 (no sub-workers), ONE successor per lane at 32k (briefed from the notebook +</text>
+<text class="title" x="818.0" y="1581.7" font-size="12.2">the partial), the second stop ends it PARTIAL</text>
+<text class="h" x="818.0" y="1595.2">confinement — the lethal trifecta broken</text>
+<text class="b" x="818.0" y="1608.8">•</text>
+<text x="830.0" y="1608.8">workspaceRoot = memory/artifacts/swarm-&lt;id&gt;/&lt;lane&gt;/</text>
+<text x="830.0" y="1622.4">(gitignored) and nothing else</text>
+<text class="b" x="818.0" y="1636.0">•</text>
+<text x="830.0" y="1636.0">the lane's SHELL: env -i + PATH (tools/ first) + HOME = the</text>
+<text x="830.0" y="1649.6">lane dir (the worker PROCESS keeps the real HOME) + locale +</text>
+<text x="830.0" y="1663.2">SEARCH_AUTH_FILE + SEARCH_LOG</text>
+<text class="b" x="818.0" y="1676.8">•</text>
+<text x="830.0" y="1676.8">no repo, no .env, no DeepSeek key (the harness drops</text>
+<text x="830.0" y="1690.4">KEY|SECRET|TOKEN and DSH_* names from every shell); reads</text>
+<text x="830.0" y="1704.0">fenced by the scope rule; network only here</text>
+<text class="h" x="818.0" y="1717.6">caps and sweep rules</text>
+<text x="818.0" y="1731.2">$1.00 per sweep · 12 calls · 1200 s per lane · wall clock 2× ·</text>
+<text x="818.0" y="1744.8">concurrency ≤ 5. serial collapse (one lane &gt; 60% of calls, once</text>
+<text x="818.0" y="1758.4">every lane has ≥ 3 and one reached 10) · fake parallelism</text>
+<text x="818.0" y="1772.0">(refused at the plan) · dead lane (no notebook write or search in</text>
+<text x="818.0" y="1785.6">10 steps)</text>
+<text class="h" x="1195.0" y="1595.2">tools (stdlib, first on PATH)</text>
+<text class="b" x="1195.0" y="1608.8">•</text>
+<text x="1207.0" y="1608.8">web_search.py — Parallel PRIMARY, Exa FALLBACK, one retry, the</text>
+<text x="1207.0" y="1622.4">answering backend stamped, one JSON line per call to SEARCH_LOG</text>
+<text class="b" x="1195.0" y="1636.0">•</text>
+<text x="1207.0" y="1636.0">web_fetch.py — GET-only, http(s), loopback and private hosts</text>
+<text x="1207.0" y="1649.6">refused, 2 MB cap; saves page-NN.md capped at 12k chars, prints</text>
+<text x="1207.0" y="1663.2">the path + a 6k excerpt</text>
+<text class="h" x="1195.0" y="1676.8">notebook notes.md</text>
+<text x="1195.0" y="1690.4">append after EVERY fetch in the very next call; the lane's state</text>
+<text x="1195.0" y="1704.0">file; a tripped lane with no final message files its notebook as</text>
+<text x="1195.0" y="1717.6">the PARTIAL</text>
+<text class="h" x="1195.0" y="1731.2">the lane brief (context starts empty)</text>
+<text x="1195.0" y="1744.8">sub-question · what the other lanes cover · tool-call budget ·</text>
+<text x="1195.0" y="1758.4">start wide, then narrow · REPORT CALL: the message after the 5th</text>
+<text x="1195.0" y="1772.0">tool call is the report (a successor's after the 3rd) · grep</text>
+<text x="1195.0" y="1785.6">saved pages, never cat them whole</text>
+</g>
+<g class="box mini" id="c1"><rect x="809.0" y="1805.5999999999979" width="184.5" height="128" rx="6"/>
+<text class="title" x="818.0" y="1826.8" font-size="12.2">collect</text>
+<text x="818.0" y="1840.3">sanitizer on every report →</text>
+<text x="818.0" y="1853.9">reports.md: N short reports,</text>
+<text x="818.0" y="1867.5">sources = url · title · the</text>
+<text x="818.0" y="1881.1">claim (unsourced claims do</text>
+<text x="818.0" y="1894.7">not count); errors are not</text>
+<text x="818.0" y="1908.3">findings</text>
+</g>
+<g class="box mini" id="c2"><rect x="1001.5" y="1805.5999999999979" width="184.5" height="128" rx="6"/>
+<text class="title" x="1010.5" y="1826.8" font-size="12.2">the LEAD synthesizes</text>
+<text x="1010.5" y="1840.3">synthesis.md with a mandatory</text>
+<text x="1010.5" y="1853.9">CONTRADICTIONS section; only</text>
+<text x="1010.5" y="1867.5">the lead reads all N — lanes</text>
+<text x="1010.5" y="1881.1">never see each other</text>
+</g>
+<g class="box mini" id="c3"><rect x="1194.0" y="1805.5999999999979" width="184.5" height="128" rx="6"/>
+<text class="title" x="1203.0" y="1826.8" font-size="12.2">scorecard.jsonl + verdict</text>
+<text x="1203.0" y="1840.3">calls per lane, max share,</text>
+<text x="1203.0" y="1853.9">completion, sourced lanes,</text>
+<text x="1203.0" y="1867.5">searches, usd, partial,</text>
+<text x="1203.0" y="1881.1">fallback_lanes; swarm.py</text>
+<text x="1203.0" y="1894.7">--verdict &lt;sweep&gt; 1-5</text>
+<text x="1203.0" y="1908.3">(refused without the</text>
+<text x="1203.0" y="1921.9">CONTRADICTIONS heading)</text>
+</g>
+<g class="box gate" id="c4"><rect x="1386.5" y="1805.5999999999979" width="184.5" height="128" rx="6"/>
+<text class="title" x="1395.5" y="1826.8" font-size="12.2">the GATE</text>
+<text x="1395.5" y="1840.3">any sweep artifact enters the</text>
+<text x="1395.5" y="1853.9">genome per item, through the</text>
+<text x="1395.5" y="1867.5">gate — never by git add</text>
+</g>
+<path class="arrow ctl" d="M 190,152 L 190,166" marker-end="url(#m-ctl)"/>
+<text class="alabel ctl" x="205" y="162" text-anchor="middle">prompts · /verbs · rulings</text>
+<path class="arrow ctl" d="M 360,295 L 388,211" marker-end="url(#m-ctl)"/>
+<path class="arrow ctl" d="M 638,129 L 666,186" marker-end="url(#m-ctl)"/>
+<path class="arrow ctl" d="M 638,266 L 666,467" marker-end="url(#m-ctl)"/>
+<path class="arrow data" d="M 1232,541 L 1246,541 L 1246,467 L 1260,467" marker-end="url(#m-data)"/>
+<path class="arrow evt" d="M 1208,1009 L 1208,1035 L 1250,1035 L 1250,1338 L 1232,1338" marker-end="url(#m-evt)"/>
+<text class="alabel evt" x="1200" y="1029" text-anchor="end">events with evidence: trips, ask, checkpoint, done, failed</text>
+<path class="arrow rep" d="M 706,1009 L 706,1037 L 483,1037 L 483,1065" marker-end="url(#m-rep)"/>
+<text class="alabel rep" x="491" y="1033" text-anchor="start">report path</text>
+<path class="arrow rep" d="M 578,1164 L 590,1164" marker-end="url(#m-rep)"/>
+<path class="arrow rep" d="M 795,1164 L 807,1164" marker-end="url(#m-rep)"/>
+<path class="arrow rep" d="M 1012,1164 L 1024,1164" marker-end="url(#m-rep)"/>
+<text class="alabel rep" x="1018" y="1059" text-anchor="start">/check</text>
+<path class="arrow rep" d="M 1132,1264 L 1132,1288 L 139,1288 L 139,595" marker-end="url(#m-rep)"/>
+<text class="alabel rep" x="400" y="1284" text-anchor="start">the lead reads the report: ≤ 500 tokens, bulk by path — then resumes, re-briefs, or promotes facts through the gate</text>
+<path class="arrow evt" d="M 388,1338 L 275,1338 L 275,595" marker-end="url(#m-evt)"/>
+<text class="alabel evt" x="380" y="1322" text-anchor="end">Monitor on events.jsonl wakes the lead</text>
+<text class="alabel evt" x="380" y="1334" text-anchor="end">(Claude Code re-invokes the session)</text>
+<text class="alabel evt" x="380" y="1346" text-anchor="end">→ one verb: steer · stop · resume · take over</text>
+<path class="arrow ctl" d="M 208,1480 L 216,1480" marker-end="url(#m-ctl)"/>
+<path class="arrow ctl" d="M 396,1480 L 404,1480" marker-end="url(#m-ctl)"/>
+<path class="arrow ctl" d="M 584,1480 L 592,1480" marker-end="url(#m-ctl)"/>
+<path class="arrow ctl" d="M 208,1722 L 216,1722" marker-end="url(#m-ctl)"/>
+<path class="arrow ctl" d="M 396,1722 L 404,1722" marker-end="url(#m-ctl)"/>
+<path class="arrow ctl" d="M 584,1722 L 592,1722" marker-end="url(#m-ctl)"/>
+<path class="arrow ctl" d="M 681,1787 L 681,1791 L 119,1791 L 119,1795" marker-end="url(#m-ctl)"/>
+<path class="arrow ctl" d="M 208,1859 L 216,1859" marker-end="url(#m-ctl)"/>
+<path class="arrow prop" d="M 396,1859 L 404,1859" marker-end="url(#m-prop)"/>
+<path class="arrow ctl" d="M 584,1859 L 592,1859" marker-end="url(#m-ctl)"/>
+<path class="arrow ctl" d="M 994,1487 L 1002,1487" marker-end="url(#m-ctl)"/>
+<path class="arrow ctl" d="M 1186,1487 L 1194,1487" marker-end="url(#m-ctl)"/>
+<path class="arrow ctl" d="M 1378,1487 L 1386,1487" marker-end="url(#m-ctl)"/>
+<path class="arrow ctl" d="M 1479,1537 L 1495,1545" marker-end="url(#m-ctl)"/>
+<path class="arrow rep" d="M 885,1798 L 901,1806" marker-end="url(#m-rep)"/>
+<path class="arrow rep" d="M 994,1870 L 1002,1870" marker-end="url(#m-rep)"/>
+<path class="arrow ctl" d="M 1186,1870 L 1194,1870" marker-end="url(#m-ctl)"/>
+<path class="arrow ctl" d="M 1378,1870 L 1386,1870" marker-end="url(#m-ctl)"/>
+<g class="mark"><circle cx="346" cy="281" r="9"/><text x="346" y="285" text-anchor="middle">1</text></g>
+<g class="mark"><circle cx="624" cy="100" r="9"/><text x="624" y="104" text-anchor="middle">2</text></g>
+<g class="mark"><circle cx="1218" cy="88" r="9"/><text x="1218" y="92" text-anchor="middle">3</text></g>
+<g class="mark"><circle cx="1209" cy="692" r="9"/><text x="1209" y="696" text-anchor="middle">4</text></g>
+<g class="mark"><circle cx="1218" cy="1322" r="9"/><text x="1218" y="1326" text-anchor="middle">5</text></g>
+<g class="mark"><circle cx="564" cy="1079" r="9"/><text x="564" y="1082" text-anchor="middle">6</text></g>
+<g class="mark"><circle cx="1226" cy="1250" r="9"/><text x="1226" y="1254" text-anchor="middle">7</text></g>
+</svg>
+<ol class="trace">
+  <li><b>/worker "goal" --scope DIR</b> — Conrad prompts; the lead writes a brief (goal, constraints, definition-of-done with the rungs, facts, scope, preset, caps) and calls the verb.</li>
+  <li><b>do.py</b> registers the brief in the lineage registry (state <i>running</i>) and starts <code>worker.py</code> with setsid — detached, it outlives the session.</li>
+  <li><b>worker.py</b> reads the brief and opens the runtime: the engine (profile + patch, per-worker cache, hooks.json) — or plain, only if the engine cannot start, stamped as a fallback everywhere.</li>
+  <li>The model works inside the scope. Every tool call and result passes the <b>supervisor</b>; past 20k of context the meter line rides every tool result (the hook on the engine); at 26k it steers, at 32k it stops — a trip files a PARTIAL.</li>
+  <li>Trips, checkpoints and ask-backs land in <b>events.jsonl</b>; the Monitor wakes the lead, which steers, stops, resumes (an ask-back gets its answer on the same session) or takes over. The status line is the safety net.</li>
+  <li>The worker's final message is the <b>report</b>: <code>lineage.file_report</code> sanitizes it and files <code>report-&lt;hex&gt;.json</code> — <i>done</i> only with evidence, else <i>failed</i> + PARTIAL.</li>
+  <li><b>/check</b> runs the ladder rungs the definition-of-done named and stamps the results; the lead reads ≤ 500 tokens (bulk by path), decides, and promotes any fact only through the gate.</li>
+</ol>
+<h2 id="replicate">Replicate this system</h2>
+<p class="sub">Clone <code>backup</code> (the private remote), open Claude Code in the repo and paste the block for your host as the first message: the session reads the kit and brings it up layer by layer, flight test by flight test. Below is the Linux block of <code>KICKOFF.md</code>, verbatim — the generator copies it from that file, so the two never drift; the macOS block is in <code>KICKOFF.md</code>.</p>
+<!-- replication:begin -->
+<pre class="kickoff">You are the engineer replicating v2 of a personal agent system from this
+repo, on Linux (Fedora or any systemd distro). The repo is the finished
+kit: every layer below was built and flight-tested on the original host
+(Fedora 44, 2026-09-14 to 09-16), so the work is to bring each layer up
+on THIS host, run its flight test, and rebuild only what this host or a
+newer SDK breaks. Read, in this order: SPEC.md (the design, canonical;
+wins every conflict), CLAUDE.md (the session rules, already v2),
+HANDOFF.md (the original build's record: what each step shipped and what
+its flight test showed), FIELD-NOTES.md (ground truth: the DeepSeek/dsh
+quirks still bind; its v2 section — the pkg native cache under HOME, the
+hooks bridge, the patch `insert` form — is needed at steps 2, 6 and 8),
+memory/prompts/dream.md (the nightly memory pass), then MIGRATION.md,
+SPEC-v3.1.md and HANDOFF-v1.md (history only). If SPEC.md's Status
+paragraph does not read CANONICAL, or memory/prompts/dream.md is
+missing, STOP and say so — the checkout is stale; do not improvise
+either file. Where CLAUDE.md disagrees with this prompt, this prompt
+wins for the replication.
+
+What I need to have before we start (ask me to confirm each):
+- Claude Code CLI installed and logged in; `claude --version` recorded
+  in configs/stable.md next to the original pin (2.1.272), with
+  DISABLE_AUTOUPDATER=1 set so the pin holds. Say whether it is on a
+  SUBSCRIPTION (flat rate — the design assumes this) or API billing
+  (then the lead and the nightly dream bill per token; we set caps
+  before step 6).
+- git configured with user.name and user.email; python3 ≥ 3.10.
+- A DeepSeek API key in .env as DEEPSEEK_API_KEY (my own — never an
+  example value from the docs). The build adds AGENT_RUNTIME (step 1)
+  and, for step 8, the search keys; WORKER_RUNTIME and SELF_REVIEW are
+  optional flags. Nothing else goes in .env; .env.example lists it all.
+- A private git remote of my own for the repo (any host). Called
+  `backup` below.
+- For step 8 only: the search backends the kit ships — Parallel
+  (PARALLEL_API_KEY, primary) and Exa (EXA_API_KEY, fallback). A
+  different backend means rewriting the search client in
+  plumbing/swarm.py; we decide that at step 8, not before.
+- python3 and pip on PATH; `loginctl enable-linger $USER` so the nightly
+  timer runs while logged out (my step).
+
+Two rules govern all code: (1) boring — simple, easily reproducible, the
+way a senior writes it; one obvious way to do each thing; stdlib over
+frameworks; files over services. (2) technology is budgeted — the only
+unfamiliar pieces are those named in SPEC §14; another must be named
+there with what protects us before it is used.
+
+Work like this (the working agreements — they bind from step 1):
+- ONE layer at a time, in the order below. After each layer, run its
+  flight test and STOP for my confirmation before starting the next.
+- ONE CHANGE PER PROMPT: a prompt carries one change; end it with the
+  commit and ONE line, then wait for my "next". The status line (step 1)
+  refreshes only per prompt, so a session that runs several changes
+  under one prompt never sees its own context size.
+- Context: rotate past 100k at the next boundary, between changes,
+  never mid-change. Past 128k the ONLY allowed actions are rewriting
+  state.md whole and /rotate.
+- Every change that touches the runtime (plumbing/runtimes/, the
+  composition patches, the supervisor's hooks) boots the real harness BY
+  HAND before its commit — an offline start and close on both profiles,
+  zero stderr — and does so EARLY in the session, at ~10k of context,
+  not at ~35k after the code is written. One runtime-investigating
+  change per session; the binary recipes are in FIELD-NOTES.
+- Before promoting anything: python3 plumbing/tests/run_tests.py green.
+  Tests are hermetic — no API calls; a new test goes in before
+  `def main()` and is auto-collected.
+- After each meaningful change: commit on your branch and push to
+  `backup`. Never touch .git/config or the remote URL. Sandbox sessions
+  may leave .git/*.lock: `rm -f .git/*.lock` before committing.
+- Paste-safe commands only: no line-continuation backslashes; single
+  quotes around anything containing "!"; placeholders clearly marked and
+  only the marked part (prefixes are already in the value I paste).
+- Nothing irreversible without asking: no deletes outside the repo, no
+  pushes to main, no key changes, no service changes I did not request.
+  Expect me to approve file writes and commands in this session unless I
+  say otherwise.
+- Secrets never in chat, briefs, reports or commits. .env is gitignored;
+  keep it so. If a secret ever appears in chat, tell me to rotate it.
+- When something fails, debug from evidence (logs, exit codes, the
+  trajectory file) before changing anything. Every delegation failure in
+  the original build was input-side — model string, default flag, wrong
+  file — check that first (memory/procedures.md). The first diagnostic
+  after ANY run is `head -1` of every worker log.
+- Every session starts by reading the lineage state.md the SessionStart
+  hook injects and checking its Provenance line against `git log -1`; a
+  mismatch means a stale copy — read the live file and regenerate it
+  whole at the next boundary. Every session ends through /rotate or a
+  whole regeneration of state.md, never by just closing.
+- Hooks and slash commands in .claude/ load on session START. After
+  changing them, tell me to restart the session before their flight
+  test.
+- The lead never grinds: heavy work goes to workers once they exist.
+  Reach workers only through plumbing/. Claude subagents are for short
+  in-repo lookups, not for building.
+
+Build order (SPEC §16). Flight test in brackets. Each step names what the
+kit already holds; "rebuild" means only where this host differs.
+1. Prerequisites + the session shell: clone `backup`, .env from my disk
+   backup (gitignored — never in a clone), branch from main (the original
+   build ran on exp/v2 and merged when done). Pin `deepseek-flash`
+   (DeepSeek V4.1 Flash) as the worker model; `pip install --user
+   deepseek-harness-sdk==&lt;pin from configs/stable.md&gt;`; record `claude
+   --version`, the SDK and the model in configs/stable.md. Set
+   AGENT_RUNTIME in .env to where runtime files live on this machine
+   (~/Desktop/agent-system-runtime on the original host); the lineage is
+   seeded there on first use (plumbing/lineage.py: lineages/index.json
+   maps this directory to a lineage id with its state.md). Start memory/
+   from the templates: keep the headers and formats, empty only the
+   owner's PERSONAL entries (style, the adjudication log, personal facts
+   and procedures); KEEP the system facts and procedures the gated dream
+   added (the SDK surface, the sandbox, steer via stop-and-resume).
+   Keep the original build's HANDOFF.md as HANDOFF-build.md (history) and
+   start a fresh HANDOFF.md for this replication; CLAUDE.md is already v2
+   (memory imports, state-file discipline) — read it, do not rewrite it.
+   THE STATUS LINE COMES UP HERE, not at step 5: `plumbing/status.py
+   --line` as the UserPromptSubmit hook in .claude/settings.json prints
+   the context size (from the transcript's usage, never file bytes;
+   ROTATE AT NEXT BOUNDARY past 100k, ROTATE NOW past 128k) and the
+   state.md age (STALE after N=10 prompts without a change). The builder
+   IS the lead and has no other gauge; the original build got it at step
+   5 and ran the first five steps blind, to 649k. Step 5 keeps /rotate
+   and the SessionStart / PreCompact hooks.
+   [suite green; `claude -p ping` answers; after a session restart the
+   status line shows a context size on the second prompt; a fresh
+   session reads HANDOFF/state and reports the open items]
+2. Workers: plumbing/runtimes/{engine,plain}.py, worker.py as the
+   adapter, plumbing/compositions/ (minimal, standard patches: sandbox
+   tightened, workspaceRoot from the brief, compaction off, the hooks
+   bridge inserted in both and the bash-sandbox executor in minimal —
+   FIELD-NOTES v2), presets, ask-back, /worker, /status. OPEN WITH THE
+   SDK SURFACE CHECK: list what the installed deepseek-harness-sdk
+   actually exposes (the server verbs, the event and usage fields, the
+   profiles) against SPEC §4.2 and configs/stable.md, and correct the
+   spec before touching code — the original's claims were checked
+   against 0.1.5rc1 and corrected once; a newer pin needs the check
+   again. Test the adapter against the SDK's REAL payload shape — a
+   tool/call event captured from one live run and saved as a fixture —
+   never a hand-built one: the original's tests fed the supervisor
+   hand-written JSON strings and passed, while the live event carried
+   `arguments` as a dict that the adapter handed on as its Python repr,
+   not JSON, so the rules scanned a repr as content. The FALLBACK
+   RUNTIME (engine cannot start → plain) is surfaced in /status, the
+   report and the ledger's runtime column FROM THIS STEP — never only in
+   a log: the original judged five sweep flight tests on the fallback
+   without anyone noticing. Boot the real harness by hand (start + close,
+   both profiles, zero stderr) at ~10k of context, before the first brief.
+   [one real brief on EACH runtime returns a report with evidence and
+   /status names the runtime each ran on; the V4.1 CoT flight test: same
+   brief on minimal and standard, read the reasoning blocks, record in
+   configs/stable.md whether the split still exists]
+3. Supervision: supervisor.py trip rules, $AGENT_RUNTIME/events.jsonl,
+   Monitor wake, steer/stop/resume, the UserPromptSubmit hook already up.
+   The SDK server speaks only initialize / session/prompt / shutdown (no
+   cancel, no steer target, no cross-process reopen) — the verbs are
+   built on that; confirm it still holds. Confirm the Monitor tool exists
+   in this Claude Code version; if it does not, the status hook is the
+   wake and record the gap in HANDOFF.md. FLIGHT-TEST THE SUPERVISOR ON
+   A RESEARCH BRIEF AS WELL AS A CODING ONE, before step 8 inherits it: a
+   brief that searches, fetches pages, writes relative paths, and
+   handles content carrying slashes and the word "error" — no lane rule
+   (scope, error loop, repeat) may match INSIDE tool-result content; the
+   rules read path-keyed arguments and a command's bare words, never
+   content-like arguments. The original found this at step 8, one rule
+   bug per run.
+   [an ambiguous brief triggers ask-back; a looping brief trips `repeat`;
+   I answer a waiting (ask-back) worker with /resume; a long brief gets
+   the "wrap up, report now" steer at 26k on plain and stops with a
+   report (on the engine the steer is an event only — a running turn
+   never sees a spliced follow-up — and 32k is the rule); a brief that
+   ignores the steer is force-stopped at 32k with a PARTIAL; the
+   research brief above runs to a report with no false trip]
+4. check.py checker ladder wired into definition-of-done (R1 proof, R2
+   py_compile, R3 lint, R4 the named test command, R5 named files; "not
+   available" is never a pass; the ladder runs after the worker's final
+   report block, before filing). [a coding brief with tests; a planted
+   failure is rejected by a rung via /check]
+5. Rotation: `/rotate` rewrites state.md whole, writes the handoff
+   ($AGENT_RUNTIME/handoffs/&lt;ts&gt;.md = state.md + the transcript's text
+   tail) and ends the session; SessionStart injects state.md + the newest
+   handoff; PreCompact is the backstop and logs an EVENT when it fires.
+   The status line is up since step 1 — this step proves its STALE flag.
+   [`/rotate` mid-task → the new session continues without re-asking;
+   leave state.md alone for N prompts → STALE shows; force a compaction →
+   handoff exists and the EVENT is logged]
+6. The dream: memory/FORMAT.md and memory/INDEX.md ship; consolidate.py
+   copies the durable memory files (never archives/ or library/; TEXT
+   FILES ONLY — the copy skips anything that is not UTF-8, because a
+   worker's native-module cache under memory/artifacts/ crashed the
+   original's first unattended run with a UnicodeDecodeError) + 7 days of
+   trajectories and handoffs to a dated dream dir under $AGENT_RUNTIME,
+   runs `claude -p` there with memory/prompts/dream.md, writes DIFF.md;
+   apply_dream.py applies hunk by hunk (removed lines → audit section;
+   style/adjudication/audit hunks auto-rejected); the 19:45 systemd user timer (units ship in systemd/).
+   The dream runs unattended: THE PROMPT GOES ON STDIN — `--allowedTools`
+   is variadic and swallows a trailing positional prompt — with the
+   tools covering Read, Grep, Glob, Write, Edit (no Bash) and its cwd set
+   to the COPY, or it blocks on permission prompts / writes nothing.
+   consolidate.py records `git status --porcelain` and `git diff HEAD`
+   before the run and compares both after; any change outside the copy
+   marks the night FAILED with no DIFF.md (nothing is reverted
+   automatically); a non-zero exit or a refusal skips the night with a
+   `dream_failed` / `dream_skipped` event. The timer runs as my user: `claude` on the unit's PATH and logged in.
+   Expect the first unattended run to fail on something the by-hand run
+   did not hit; read its event before the next session does anything
+   else.
+   [one run produces a diff I can apply hunk by hunk; live memory/ is
+   unchanged until I apply; the timer's first unattended run logs a
+   `dream` event]
+7. Cost ledger: costs.py from usage fields → $AGENT_RUNTIME/costs.jsonl,
+   the rate table in configs/prices.md (prices change; keep it editable;
+   a row is priced at the worker's START-time tier, never repriced);
+   /status cost line. [rows reconcile with the DeepSeek dashboard]
+8. Swarm: web search and fetch (the backends in .env; GET-only, a page
+   capped at 12k chars), swarm.py (launched detached, like workers; lane
+   workspaces under memory/artifacts/&lt;sweep&gt;/&lt;lane&gt;/, gitignored),
+   /swarm, the research-report contract, the synthesis, the scorecard.
+   LANES NEED THE CONTEXT METER FROM THE FIRST RUN: past the meter
+   threshold every tool result carries `context Nk of 32k; report by call
+   M` — on the engine through the hooks bridge (a PostToolUse hook that
+   cats the meter file; FIELD-NOTES v2), on plain as a trailer on the
+   tool message — and the brief's REPORT line names the call to report
+   by. Expect 3-7k of prompt growth per tool call on minimal: a lane that
+   searches five times is at the 32k limit, so the meter and the "report
+   by call M" line are what make a lane file at all; the original ran six
+   sweeps before they existed. The lane fence and the pkg native cache
+   are per worker (FIELD-NOTES v2). If lanes still do not file by the
+   call the meter names, the next lever is the standard preset, not
+   another rule.
+   [a 4-lane question returns four sourced reports, one synthesis with a
+   CONTRADICTIONS section, and a scorecard row; `head -1` of every lane
+   log shows the engine, not the fallback; $DSH_HOME/cache/ is empty
+   after the sweep]
+
+After step 8 the system is live. The first post-build work on the
+original host, on evidence, was the run-7 residuals (HANDOFF.md, step
+8): the meter from 12k with M from the projected curve; the brief's
+REPORT line stating the ≤500-token report contract with bulk to the
+notebook by path; parse_sources on any line carrying a URL. Check
+HANDOFF-build.md for which of them landed before you repeat them.
+
+If I am the original owner on the original host: the repo is already at
+~/Desktop/stuff/'Project 2'/agent-system with .env — do not clone; the
+lineage, memory/ and the body exist — keep them; nothing above is a
+build step here, this prompt is the record of how it was done.
+
+Start with step 1. Tell me what you read, what you will do, and what you
+need from me before touching anything.</pre>
+<!-- replication:end -->
+<p class="foot">Self-contained: no scripts, no fonts, no network. Generated by <code>plumbing/gen_diagram.py</code> — regenerate when a SPEC.md section or KICKOFF.md changes (the suite checks the page against both the generator and KICKOFF.md); the drawing is documentation, not a source of truth — SPEC.md wins every conflict.</p>
+</div>
+</body>
+</html>
